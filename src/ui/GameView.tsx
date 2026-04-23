@@ -10,6 +10,7 @@ const INITIAL_CONFIG: BoardConfig = {
   height: 16,
   mineCount: 40,
   seed: 1,
+  witnessCharges: 12,
 };
 
 export function GameView() {

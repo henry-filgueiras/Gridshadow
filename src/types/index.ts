@@ -22,6 +22,9 @@ export interface BoardConfig {
   readonly height: number;
   readonly mineCount: number;
   readonly seed: number;
+  // Maximum witness charge at the start of the run. Direct reveals consume
+  // charge; cascade expansion and flagging do not. See WitnessState.
+  readonly witnessCharges: number;
 }
 
 export interface Board {
@@ -40,8 +43,17 @@ export type GamePhase =
   | { readonly kind: 'active' }
   | { readonly kind: 'breached'; readonly at: Coord };
 
+// Witness charge is the player's finite budget for direct observation.
+// `charge` is what remains; `max` is the starting capacity, preserved for HUD
+// ratios and future analytics.
+export interface WitnessState {
+  readonly charge: number;
+  readonly max: number;
+}
+
 export interface GameState {
   readonly board: Board;
   readonly cursor: Coord | null;
   readonly phase: GamePhase;
+  readonly witness: WitnessState;
 }

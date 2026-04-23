@@ -1,4 +1,4 @@
-import { tallyTiles } from '../engine';
+import { tallyTiles, witnessStatus } from '../engine';
 import type { GameState } from '../types';
 
 interface HUDProps {
@@ -10,6 +10,8 @@ export function HUD({ state, onReseed }: HUDProps) {
   const { config } = state.board;
   const tally = tallyTiles(state);
   const breach = state.phase.kind === 'breached' ? state.phase.at : null;
+  const wStatus = witnessStatus(state);
+  const { charge, max } = state.witness;
 
   return (
     <div className="hud">
@@ -23,6 +25,30 @@ export function HUD({ state, onReseed }: HUDProps) {
           </div>
         </div>
       )}
+
+      <div className={`hud-witness hud-witness-${wStatus}`}>
+        <div className="hud-witness-head">
+          <span className="hud-witness-label">witness charge</span>
+          <span className="hud-witness-count">
+            <span className="hud-witness-charge">{charge}</span>
+            <span className="hud-witness-sep">/</span>
+            <span className="hud-witness-max">{max}</span>
+          </span>
+        </div>
+        <div className="hud-witness-meter" aria-hidden>
+          <div
+            className="hud-witness-meter-fill"
+            style={{ width: max > 0 ? `${(charge / max) * 100}%` : '0%' }}
+          />
+        </div>
+        <div className="hud-witness-note">
+          {wStatus === 'exhausted'
+            ? 'charge exhausted — inference only'
+            : 'direct reveal cost: 1 charge'}
+        </div>
+      </div>
+
+      <div className="hud-divider" />
 
       <div className="hud-section">
         <div className="hud-row">
@@ -80,8 +106,8 @@ export function HUD({ state, onReseed }: HUDProps) {
       </div>
 
       <div className="hud-hint">
-        <div>left-click — resolve</div>
-        <div>right-click — flag</div>
+        <div>left-click — resolve (costs 1 charge)</div>
+        <div>right-click — flag (free)</div>
       </div>
 
       <button

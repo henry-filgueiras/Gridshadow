@@ -11,12 +11,15 @@ archive with a new dated entry that supersedes it.
 ## Current Canon
 
 ### Stage
-Reveal / flag / breach loop implemented. The board speaks Minesweeper with
-Witness Protocol vocabulary: tiles are `unresolved | resolved | flagged`,
-and the run phase is `active` or `breached`. Next substantive foundation
-decisions: win condition (full resolution without breach), chord
-interactions, and an information-budget system. Still foundation work —
-not progression, metagame, or content.
+Reveal / flag / breach loop implemented on top of a finite **witness charge**
+budget. The board speaks Minesweeper with Witness Protocol vocabulary: tiles
+are `unresolved | resolved | flagged`, the run phase is `active` or
+`breached`, and the player has a finite pool of direct observations. The
+identity pivot — "information is a resource" — is now expressed in the
+rules, not just the skin. Next substantive foundation decisions: win
+condition (full resolution without breach), chord interactions, and the
+first honest inference-assist primitive. Still foundation work — not
+progression, metagame, or content.
 
 ### Stack
 * **Language:** TypeScript (strict, `verbatimModuleSyntax`).
@@ -49,33 +52,49 @@ rewriting the rules. Every shortcut across these boundaries buys a future
 excavation bill.
 
 ### Engine surface (current)
-* `createGameState(config: BoardConfig): GameState` — produces an `active` phase.
+* `createGameState(config: BoardConfig): GameState` — produces an `active`
+  phase with `witness.charge = witness.max = config.witnessCharges`.
 * `reduceGame(state, action): GameState` where action is one of
   `hover | hoverClear | reveal | flag | regen`. Pure.
-* `generateBoard(config)`: deterministic from `{width, height, mineCount, seed}`.
-  Computes `isMine` and `adjacentMines`.
+* `generateBoard(config)`: deterministic from
+  `{width, height, mineCount, seed}`. `witnessCharges` is a gameplay-budget
+  input that does not affect board generation — the board is the same under
+  any charge count for a given seed.
 * `tallyTiles(state): TileTally` — pure derivation of
   unresolved / resolved / flagged counts, for HUD and future observers.
+* `witnessStatus(state): 'steady' | 'low' | 'exhausted'` — thresholded
+  selector used by the HUD so urgency thresholds live in one place. Low is
+  charge ≤ 3 OR charge ≤ 25% of max (absolute floor beats ratio as max
+  shrinks); exhausted is charge === 0.
 * `reveal` is the only action that can change `phase`: revealing a mine
   transitions to `{ kind: 'breached', at }`. Both `reveal` and `flag` are
-  no-ops while breached; `regen` resets phase to `active`.
+  no-ops while breached; `regen` resets phase to `active` and refills
+  charge to max.
 * Reveal cascades: revealing a tile with `adjacentMines === 0` floods through
   connected zero-adjacency tiles, revealing their numbered borders too.
   Flagged tiles stop propagation.
+* **Witness charge**: a finite integer budget in `GameState.witness`. Each
+  effectful direct reveal consumes 1 charge; cascade expansion, flagging,
+  and denied reveals (wrong state / breached / zero charge) are free. When
+  charge reaches 0, `reveal` becomes a no-op — the player must continue by
+  inference, flagging, or deliberate risk. No regen, no shops, no batteries.
+  Default budget: 12 charges on a 16×16, 40-hazard field.
 * First-click safety is intentionally NOT implemented: the seed fully
   determines the board, so the first reveal can legitimately detonate.
   The player learning to read the field is the game.
 
 ### What the visual proof does
-16×16 interactive grid with the full reveal/flag loop:
-* left-click resolves a tile; zero-adjacency regions flood-reveal
-* right-click toggles a flag (browser context menu is suppressed over the board)
+16×16 interactive grid with the full reveal/flag loop under a witness budget:
+* left-click resolves a tile and spends 1 witness charge; zero-adjacency
+  regions flood-reveal for free; reveals with zero charge are refused
+* right-click toggles a flag — always free
 * revealing a hazard transitions phase to `breached`, renders remaining hazards
   (render-only — engine leaves them `unresolved`), tints mis-flagged tiles red,
   and disables further pointer actions
-* HUD shows seed, field dims, hazard count, tile tallies, cursor, phase,
-  and a breach banner when applicable
-* reseed regenerates a fresh active board from a new seed
+* HUD shows witness charge with a meter and tiered coloring
+  (steady → low at ≤25% or ≤3 remaining → exhausted at 0), seed, field dims,
+  hazard count, tile tallies, cursor, phase, and a breach banner when applicable
+* reseed regenerates a fresh active board and refills charge to max
 
 ### Per-exchange process (from CLAUDE.md)
 1. Update this file.
@@ -190,3 +209,105 @@ budget resource, a replay buffer keyed off dispatched actions, unit tests.
 Chord and win are the obvious next foundation items; testing should come in
 once a test runner is added (deferred to keep this pass's toolchain
 surface unchanged).
+
+### 2026-04-23 — Claude Opus 4.7 (witness budget v1)
+First identity-defining pass: direct reveals are now paid for out of a
+finite **witness charge** pool. This moves the game off the
+"click every square eventually" default and into "where is certainty worth
+spending?" — the thesis for Witness Protocol. Demoted three Canon sections.
+Verbatim:
+
+**Superseded — Stage:**
+> Reveal / flag / breach loop implemented. The board speaks Minesweeper with
+> Witness Protocol vocabulary: tiles are `unresolved | resolved | flagged`,
+> and the run phase is `active` or `breached`. Next substantive foundation
+> decisions: win condition (full resolution without breach), chord
+> interactions, and an information-budget system. Still foundation work —
+> not progression, metagame, or content.
+
+**Superseded — Engine surface (current):**
+> * `createGameState(config: BoardConfig): GameState` — produces an `active` phase.
+> * `reduceGame(state, action): GameState` where action is one of
+>   `hover | hoverClear | reveal | flag | regen`. Pure.
+> * `generateBoard(config)`: deterministic from `{width, height, mineCount, seed}`.
+>   Computes `isMine` and `adjacentMines`.
+> * `tallyTiles(state): TileTally` — pure derivation of
+>   unresolved / resolved / flagged counts, for HUD and future observers.
+> * `reveal` is the only action that can change `phase`: revealing a mine
+>   transitions to `{ kind: 'breached', at }`. Both `reveal` and `flag` are
+>   no-ops while breached; `regen` resets phase to `active`.
+> * Reveal cascades: revealing a tile with `adjacentMines === 0` floods through
+>   connected zero-adjacency tiles, revealing their numbered borders too.
+>   Flagged tiles stop propagation.
+> * First-click safety is intentionally NOT implemented: the seed fully
+>   determines the board, so the first reveal can legitimately detonate.
+>   The player learning to read the field is the game.
+
+**Superseded — What the visual proof does:**
+> 16×16 interactive grid with the full reveal/flag loop:
+> * left-click resolves a tile; zero-adjacency regions flood-reveal
+> * right-click toggles a flag (browser context menu is suppressed over the board)
+> * revealing a hazard transitions phase to `breached`, renders remaining hazards
+>   (render-only — engine leaves them `unresolved`), tints mis-flagged tiles red,
+>   and disables further pointer actions
+> * HUD shows seed, field dims, hazard count, tile tallies, cursor, phase,
+>   and a breach banner when applicable
+> * reseed regenerates a fresh active board from a new seed
+
+Design notes for this pass:
+- `witnessCharges` sits on `BoardConfig`, not outside it. A run is defined
+  by its seed **and** its starting budget together, so the full
+  `{ seed → starting state }` mapping remains pure. `regen` carries the
+  existing config forward, so reseeding refills charge the same way every
+  time. Different budgets produce different runs on the same seed — that is
+  a deliberate degree of freedom for future difficulty presets, not a
+  determinism leak.
+- `WitnessState` stores both `charge` and `max`. Keeping `max` in state
+  rather than rederiving from `config.witnessCharges` is slightly redundant
+  today, but cheap and forward-compatible: if a later pass ever lets max
+  change mid-run (e.g., a permanent penalty on a risky action), consumers
+  won't silently read the wrong capacity. Today the two values are
+  synchronized at `createGameState` and never touched again.
+- Charge is spent in `revealTile` **after** every early-return guard. A
+  reveal that is refused — wrong tile state, breached phase, zero charge —
+  costs nothing. This is load-bearing: if a mis-click on a flagged tile
+  burned a charge, the UX cost would dwarf the design goal. The rule is
+  "charge pays for observations the engine actually performs," not
+  "charge pays for input events."
+- Cascade flood stays free. The charge bought the observation that made the
+  flood inevitable, and making each auto-revealed cell cost extra would
+  just punish the player for boards the seed generated generously. The
+  design intent is to make *choosing* to observe expensive, not to make
+  observation itself expensive.
+- Zero-charge state is a **soft** deny — `reveal` becomes a no-op, but
+  `flag`, `hoverClear`, and `regen` all still work. The run continues, and
+  the player finishes through inference and deliberate risk (flagging is
+  how you commit to a read, and the run ends only on breach). No timeout,
+  no forced loss — the budget failing is a *pressure*, not a termination.
+- `witnessStatus` selector centralizes the "low / exhausted" thresholds.
+  The HUD consumes the tier, not the raw numbers, so future surfaces (an
+  audio cue, a board-edge glow, an accessibility ARIA announcement) can
+  agree on urgency without re-deriving. Thresholds chosen: low at
+  `charge ≤ 3 || charge * 4 ≤ max`, exhausted at `charge === 0`. The
+  absolute floor of 3 matters as max shrinks — at low budgets, a pure
+  ratio would trigger "low" only in the final charge, which is already
+  exhausted.
+- HUD placement: witness panel is the **first** block below the title,
+  above seed/field/hazards. The player's attention during a decision is on
+  "can I afford this?", not on board metadata. CSS uses tier classes
+  (`hud-witness-steady|low|exhausted`) so the urgency change is purely
+  visual; the DOM structure doesn't branch. Exhausted state pulses via a
+  CSS keyframe — the one concession to motion, and only because a static
+  red panel reads as an error state rather than a live condition.
+- Deliberately held back: no visual charge indicator *on* the board (no
+  per-tile cost preview, no cursor badge). The HUD is one glance away; a
+  reticle-level overlay would cross into the "arcade juice" the brief
+  asked to avoid. If a future pass shows variable-cost reveals (peek vs.
+  full resolve), the cost display will need to move closer to the cursor —
+  but v1 has one cost, and stating it once in the HUD is enough.
+
+Explicitly deferred (carried forward, with the budget resource now
+resolved): win detection, chord, a replay buffer keyed off dispatched
+actions, unit tests, variable-cost observations (peek, constraint probe,
+hazard bloom), and any regen / shop / battery mechanic. The brief was
+explicit on the last set: scarcity only, no relief mechanic yet.

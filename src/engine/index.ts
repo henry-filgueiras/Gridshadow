@@ -4,4 +4,9 @@
 export { generateBoard, tileAt } from './board';
 export { createRng, hashSeed, rngInt, type Rng } from './rng';
 export { createGameState, reduceGame, type GameAction } from './state';
-export { tallyTiles, type TileTally } from './selectors';
+export {
+  tallyTiles,
+  witnessStatus,
+  type TileTally,
+  type WitnessStatus,
+} from './selectors';

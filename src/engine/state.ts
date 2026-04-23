@@ -16,10 +16,12 @@ export type GameAction =
   | { readonly type: 'regen'; readonly seed: number };
 
 export function createGameState(config: BoardConfig): GameState {
+  const max = Math.max(0, config.witnessCharges | 0);
   return {
     board: generateBoard(config),
     cursor: null,
     phase: { kind: 'active' },
+    witness: { charge: max, max },
   };
 }
 
@@ -53,8 +55,19 @@ function revealTile(state: GameState, x: number, y: number): GameState {
   if (!tile) return state;
   if (tile.state !== 'unresolved') return state;
 
+  // Witness charge gate: a direct reveal requires charge. Charge is decremented
+  // once per effectful reveal action — the cascade flood that follows a safe
+  // reveal is free, because the charge paid for the observation that made the
+  // flood inevitable. Denied reveals (wrong tile state, breached, zero charge)
+  // do not spend charge.
+  if (state.witness.charge <= 0) return state;
+
   const { width, height } = state.board.config;
   const nextTiles = state.board.tiles.slice();
+  const nextWitness = {
+    ...state.witness,
+    charge: state.witness.charge - 1,
+  };
 
   if (tile.isMine) {
     // Detonation. Resolve the breach tile itself and lock the phase.
@@ -65,6 +78,7 @@ function revealTile(state: GameState, x: number, y: number): GameState {
       ...state,
       board: { ...state.board, tiles: nextTiles },
       phase: { kind: 'breached', at: { x, y } },
+      witness: nextWitness,
     };
   }
 
@@ -103,6 +117,7 @@ function revealTile(state: GameState, x: number, y: number): GameState {
   return {
     ...state,
     board: { ...state.board, tiles: nextTiles },
+    witness: nextWitness,
   };
 }
 

@@ -155,3 +155,106 @@ body,
   letter-spacing: 0.08em;
   line-height: 1.6;
 }
+
+.hud-witness {
+  padding: 10px 10px 8px;
+  border: 1px solid #1f2a36;
+  border-radius: 3px;
+  background: rgba(12, 20, 28, 0.6);
+  transition: border-color 160ms ease, background 160ms ease;
+}
+
+.hud-witness-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.hud-witness-label {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #7effff;
+}
+
+.hud-witness-count {
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  color: #c7d1db;
+}
+
+.hud-witness-charge {
+  font-weight: bold;
+  font-size: 16px;
+}
+
+.hud-witness-sep {
+  color: #3a4a5c;
+  margin: 0 2px;
+}
+
+.hud-witness-max {
+  color: #5a6d80;
+}
+
+.hud-witness-meter {
+  height: 3px;
+  background: #0a1118;
+  border: 1px solid #1f2a36;
+  border-radius: 1px;
+  overflow: hidden;
+}
+
+.hud-witness-meter-fill {
+  height: 100%;
+  background: #7effff;
+  transition: width 180ms ease, background 160ms ease;
+}
+
+.hud-witness-note {
+  margin-top: 6px;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: #5a6d80;
+  text-transform: uppercase;
+}
+
+.hud-witness-low {
+  border-color: #a87a1a;
+  background: rgba(40, 28, 8, 0.55);
+}
+
+.hud-witness-low .hud-witness-label,
+.hud-witness-low .hud-witness-charge {
+  color: #ffcf7e;
+}
+
+.hud-witness-low .hud-witness-meter-fill {
+  background: #ffcf7e;
+}
+
+.hud-witness-low .hud-witness-note {
+  color: #c9a25a;
+}
+
+.hud-witness-exhausted {
+  border-color: #ff4655;
+  background: rgba(60, 12, 16, 0.7);
+  animation: hud-witness-pulse 1.6s ease-in-out infinite;
+}
+
+.hud-witness-exhausted .hud-witness-label,
+.hud-witness-exhausted .hud-witness-charge,
+.hud-witness-exhausted .hud-witness-note {
+  color: #ff4655;
+}
+
+.hud-witness-exhausted .hud-witness-meter-fill {
+  background: #ff4655;
+}
+
+@keyframes hud-witness-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 70, 85, 0); }
+  50% { box-shadow: 0 0 0 2px rgba(255, 70, 85, 0.35); }
+}
