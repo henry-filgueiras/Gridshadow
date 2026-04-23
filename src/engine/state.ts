@@ -1,5 +1,23 @@
-import type { BoardConfig, Coord, GamePhase, GameState, Tile } from '../types';
+import type {
+  BoardConfig,
+  Coord,
+  GamePhase,
+  GameState,
+  ProbeOrientation,
+  Tile,
+} from '../types';
 import { generateBoard, tileAt } from './board';
+
+// Witness Probe v1 tunables. Kept at file scope so future variants (shorter
+// probes, elite-cost probes) can reference them without touching the reducer.
+const PROBE_LENGTH = 5;
+const PROBE_COST = 2;
+// Anti-collapse threshold: require at least this many truly-unknown cells in
+// the segment. "unresolved" here is strict — flagged and resolved do not
+// count. With PROBE_LENGTH = 5 and threshold = 3, edge probes (clipped to 3
+// cells) can still pass when every on-board cell is unresolved, and the
+// instrument cannot collapse to a 2-cell "which one is the mine?" question.
+const PROBE_MIN_UNRESOLVED = 3;
 
 // Pure reducer surface for the engine. UI dispatches actions, renderer reads
 // snapshots. No I/O, no React, no timers — all side effects live in clients.
@@ -14,6 +32,12 @@ export type GameAction =
   | { readonly type: 'reveal'; readonly x: number; readonly y: number }
   | { readonly type: 'flag'; readonly x: number; readonly y: number }
   | { readonly type: 'confirm'; readonly x: number; readonly y: number }
+  | {
+      readonly type: 'probe';
+      readonly x: number;
+      readonly y: number;
+      readonly orientation: ProbeOrientation;
+    }
   | { readonly type: 'regen'; readonly seed: number };
 
 export function createGameState(config: BoardConfig): GameState {
@@ -23,6 +47,7 @@ export function createGameState(config: BoardConfig): GameState {
     cursor: null,
     phase: { kind: 'active' },
     witness: { charge: max, max, confirms: 0 },
+    lastProbe: null,
   };
 }
 
@@ -44,6 +69,8 @@ export function reduceGame(state: GameState, action: GameAction): GameState {
       return toggleFlag(state, action.x, action.y);
     case 'confirm':
       return confirmTile(state, action.x, action.y);
+    case 'probe':
+      return probeTile(state, action.x, action.y, action.orientation);
     case 'regen':
       return createGameState({ ...state.board.config, seed: action.seed });
   }
@@ -195,6 +222,90 @@ function resolvePhase(tiles: ReadonlyArray<Tile>): GamePhase {
   }
   return { kind: 'cleared' };
 }
+
+// Witness Probe — structural scan. Does not reveal tile state; returns the
+// total hazard count inside a 5-cell line centered on the target. The
+// instrument buys structure, not certainty: the player learns *how many*
+// hazards occupy a region without learning *which cells* are hazards.
+//
+// Refusal (no-op, no cost) on any of:
+//   - run not in active phase
+//   - insufficient charge (needs PROBE_COST)
+//   - target tile is out of bounds or not `unresolved`
+//   - segment contains fewer than PROBE_MIN_UNRESOLVED truly-unresolved
+//     cells (flagged and resolved do not count) — the anti-collapse gate
+//
+// On success: deduct PROBE_COST from charge, store a `ProbeReading` on
+// state.lastProbe. No tile state changes — the board's truth is untouched,
+// only the player's *knowledge* grows.
+function probeTile(
+  state: GameState,
+  x: number,
+  y: number,
+  orientation: ProbeOrientation,
+): GameState {
+  if (state.phase.kind !== 'active') return state;
+  if (state.witness.charge < PROBE_COST) return state;
+
+  const target = tileAt(state.board, x, y);
+  if (!target) return state;
+  if (target.state !== 'unresolved') return state;
+
+  const cells = probeSegment(state.board.config.width, state.board.config.height, x, y, orientation);
+
+  let unresolvedInSegment = 0;
+  let hazardCount = 0;
+  const { width } = state.board.config;
+  for (const c of cells) {
+    const t = state.board.tiles[c.y * width + c.x]!;
+    if (t.state === 'unresolved') unresolvedInSegment++;
+    if (t.isMine) hazardCount++;
+  }
+
+  if (unresolvedInSegment < PROBE_MIN_UNRESOLVED) return state;
+
+  return {
+    ...state,
+    witness: {
+      ...state.witness,
+      charge: state.witness.charge - PROBE_COST,
+    },
+    lastProbe: {
+      at: { x, y },
+      orientation,
+      cells,
+      hazardCount,
+    },
+  };
+}
+
+// Compute the probe's scanned cells: a PROBE_LENGTH-long line centered on
+// (x,y) along the given axis, clipped to board bounds. Pure and shared —
+// the renderer calls an equivalent derivation via a selector so the
+// preview outline cannot drift from the engine's actual segment.
+export function probeSegment(
+  width: number,
+  height: number,
+  x: number,
+  y: number,
+  orientation: ProbeOrientation,
+): Coord[] {
+  const half = (PROBE_LENGTH - 1) >> 1;
+  const cells: Coord[] = [];
+  for (let step = -half; step <= half; step++) {
+    const nx = orientation === 'horizontal' ? x + step : x;
+    const ny = orientation === 'vertical' ? y + step : y;
+    if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+    cells.push({ x: nx, y: ny });
+  }
+  return cells;
+}
+
+export const PROBE_TUNABLES = {
+  length: PROBE_LENGTH,
+  cost: PROBE_COST,
+  minUnresolved: PROBE_MIN_UNRESOLVED,
+} as const;
 
 // Shared reveal core. Mutates `tiles` in place: reveals the tile at (x,y),
 // cascading through any zero-adjacency flood. Returns true iff the targeted

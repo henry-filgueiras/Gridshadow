@@ -6,7 +6,8 @@ import {
   Rectangle,
   Text,
 } from 'pixi.js';
-import type { Board, Coord, GameState, Tile } from '../types';
+import { probeSegment } from '../engine';
+import type { Board, Coord, GameState, ProbeOrientation, Tile } from '../types';
 
 // Pixi v8 rendering of the board. This is a one-way consumer of engine state
 // plus a one-way emitter of pointer intent. No game rules live here.
@@ -57,6 +58,10 @@ const COLOR_BREACH_GLYPH = 0xffe0e0;
 // colors (they already tell the truth).
 const COLOR_MINE_GLYPH_STABILIZED = 0x7a8a95;
 const COLOR_FLAG_GLYPH_STABILIZED = 0x7effff;
+// Probe preview — an inset cyan outline on the would-be scanned segment.
+// Inset (not overdraw) so the underlying fill and stroke remain readable;
+// the preview is instrumentation, not a selection state.
+const COLOR_PROBE_PREVIEW = 0x7effff;
 
 const GLYPH_FLAG = '⚑';
 const GLYPH_MINE = '●';
@@ -67,6 +72,14 @@ export interface BoardRendererEvents {
   onReveal(x: number, y: number): void;
   onFlag(x: number, y: number): void;
   onConfirm(x: number, y: number): void;
+}
+
+// Per-frame UI-layer overlay: state the renderer should *paint* but that
+// the engine does not (and should not) own. Kept separate from GameState so
+// adding more overlays (path previews, constraint highlights) does not
+// pollute the reducer's state shape.
+export interface RenderOverlay {
+  readonly probeMode: ProbeOrientation | null;
 }
 
 export class BoardRenderer {
@@ -84,12 +97,12 @@ export class BoardRenderer {
     this.app.stage.addChild(this.root);
   }
 
-  render(state: GameState): void {
+  render(state: GameState, overlay: RenderOverlay): void {
     if (this.currentBoard !== state.board) {
       this.rebuildBoard(state.board);
       this.currentBoard = state.board;
     }
-    this.paint(state);
+    this.paint(state, overlay);
   }
 
   destroy(): void {
@@ -171,12 +184,34 @@ export class BoardRenderer {
     }
   }
 
-  private paint(state: GameState): void {
+  private paint(state: GameState, overlay: RenderOverlay): void {
     const { width, height } = state.board.config;
     const breachAt: Coord | null =
       state.phase.kind === 'breached' ? state.phase.at : null;
     const breached = breachAt !== null;
     const cleared = state.phase.kind === 'cleared';
+
+    // Derive the probe preview's set of tile indices once per paint. The
+    // segment geometry comes from the engine's own `probeSegment`, so the
+    // preview outline cannot drift from what the probe action actually
+    // scans. Preview only appears in active phase + probe mode on + cursor
+    // on-board — terminal phases suppress it along with hover.
+    let previewCells: Set<number> | null = null;
+    if (
+      overlay.probeMode !== null &&
+      state.cursor !== null &&
+      !breached &&
+      !cleared
+    ) {
+      const cells = probeSegment(
+        width,
+        height,
+        state.cursor.x,
+        state.cursor.y,
+        overlay.probeMode,
+      );
+      previewCells = new Set(cells.map((c) => c.y * width + c.x));
+    }
 
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
@@ -188,6 +223,7 @@ export class BoardRenderer {
           breached,
           breachAt,
           cleared,
+          previewCells?.has(idx) ?? false,
         );
       }
     }
@@ -200,14 +236,19 @@ export class BoardRenderer {
     breached: boolean,
     breachAt: Coord | null,
     cleared: boolean,
+    isProbePreview: boolean,
   ): void {
     const bg = this.tileBackgrounds[idx]!;
     const glyph = this.tileGlyphs[idx]!;
     // Hover highlight is suppressed in any terminal phase — the field is no
     // longer interactive, so the pointer should stop "suggesting" reveals.
+    // Also suppressed in probe mode: the 5-cell preview outline is the
+    // relevant affordance, and a standalone hover on the center tile would
+    // just clutter it.
     const isHover =
       !breached &&
       !cleared &&
+      !isProbePreview &&
       state.cursor?.x === tile.x &&
       state.cursor?.y === tile.y;
     const isBreachTile =
@@ -274,6 +315,14 @@ export class BoardRenderer {
     bg.rect(0, 0, TILE_SIZE, TILE_SIZE);
     bg.fill(fill);
     bg.stroke({ color: stroke, width: 1, alignment: 0 });
+
+    if (isProbePreview) {
+      // Inset cyan outline: instrumentation mark, not a selection state.
+      // Alignment 1 puts the stroke on the inside edge of the inset rect so
+      // it does not overlap the tile's base stroke.
+      bg.rect(2, 2, TILE_SIZE - 4, TILE_SIZE - 4);
+      bg.stroke({ color: COLOR_PROBE_PREVIEW, width: 1.5, alignment: 1 });
+    }
 
     if (glyph.text !== text) glyph.text = text;
     if (glyph.style.fill !== color) glyph.style.fill = color;

@@ -1,21 +1,28 @@
 import { useEffect, useRef, useState } from 'react';
-import { tallyTiles, witnessStatus } from '../engine';
-import type { GameState } from '../types';
+import { PROBE_TUNABLES, tallyTiles, witnessStatus } from '../engine';
+import type { GameState, ProbeOrientation } from '../types';
 
 interface HUDProps {
   state: GameState;
+  probeMode: ProbeOrientation | null;
   onReseed: (seed: number) => void;
 }
 
+const ORIENTATION_GLYPH: Record<ProbeOrientation, string> = {
+  horizontal: '↔',
+  vertical: '↕',
+};
+
 const RESTORE_FLASH_MS = 1800;
 
-export function HUD({ state, onReseed }: HUDProps) {
+export function HUD({ state, probeMode, onReseed }: HUDProps) {
   const { config } = state.board;
   const tally = tallyTiles(state);
   const breach = state.phase.kind === 'breached' ? state.phase.at : null;
   const cleared = state.phase.kind === 'cleared';
   const wStatus = witnessStatus(state);
   const { charge, max, confirms } = state.witness;
+  const { lastProbe } = state;
 
   // Confidence-restoration flash. The engine's `witness.confirms` counter
   // increments monotonically on every successful safe Witness Confirmation.
@@ -83,6 +90,47 @@ export function HUD({ state, onReseed }: HUDProps) {
           aria-live="polite"
         >
           {flashing ? 'witness confirmed · integrity restored' : ''}
+        </div>
+      </div>
+
+      <div className="hud-probe">
+        <div className="hud-probe-head">
+          <span className="hud-probe-label">witness probe</span>
+          <span
+            className={`hud-probe-mode ${
+              probeMode ? 'hud-probe-mode-on' : ''
+            }`}
+            aria-live="polite"
+          >
+            {probeMode
+              ? `${ORIENTATION_GLYPH[probeMode]} ${probeMode} armed`
+              : 'idle'}
+          </span>
+        </div>
+        {lastProbe ? (
+          <div className="hud-probe-reading">
+            <div className="hud-probe-reading-line">
+              <span className="hud-probe-glyph">
+                {ORIENTATION_GLYPH[lastProbe.orientation]}
+              </span>
+              <span className="hud-probe-coord">
+                {lastProbe.at.x},{lastProbe.at.y}
+              </span>
+              <span className="hud-probe-cells">
+                {lastProbe.cells.length}-cell scan
+              </span>
+            </div>
+            <div className="hud-probe-reading-count">
+              {lastProbe.hazardCount} hazard
+              {lastProbe.hazardCount === 1 ? '' : 's'} detected
+            </div>
+          </div>
+        ) : (
+          <div className="hud-probe-empty">no probe reading</div>
+        )}
+        <div className="hud-probe-note">
+          structural scan · {PROBE_TUNABLES.length}-cell line · costs{' '}
+          {PROBE_TUNABLES.cost} charge
         </div>
       </div>
 
@@ -156,6 +204,11 @@ export function HUD({ state, onReseed }: HUDProps) {
         <div>right-click — flag (free)</div>
         <div>click numbered tile — confirm (when flags match)</div>
         <div>successful confirm restores +1 charge</div>
+        <div>
+          h / v — arm horizontal / vertical probe (costs{' '}
+          {PROBE_TUNABLES.cost} charge)
+        </div>
+        <div>esc — disarm probe</div>
       </div>
 
       <button

@@ -59,9 +59,29 @@ export interface WitnessState {
   readonly confirms: number;
 }
 
+// A Witness Probe is a structural instrument: it buys the hazard count of a
+// region without revealing which cells are hazards. v1 ships one geometry, a
+// 5-cell line, in two orientations. More geometries (row/column signatures,
+// rectangular scans) are explicitly deferred.
+export type ProbeOrientation = 'horizontal' | 'vertical';
+
+// Result of a successful probe. `cells` is the actual scanned segment
+// (clipped to board bounds at edges), so consumers can render the exact
+// region the reading describes without re-deriving the geometry.
+export interface ProbeReading {
+  readonly at: Coord;
+  readonly orientation: ProbeOrientation;
+  readonly cells: ReadonlyArray<Coord>;
+  readonly hazardCount: number;
+}
+
 export interface GameState {
   readonly board: Board;
   readonly cursor: Coord | null;
   readonly phase: GamePhase;
   readonly witness: WitnessState;
+  // Most recent successful probe reading, or null if no probe has landed in
+  // this run. Replaced (not appended) on each probe — v1 surfaces one
+  // reading at a time; a probe log is deferred.
+  readonly lastProbe: ProbeReading | null;
 }

@@ -11,17 +11,20 @@ archive with a new dated entry that supersedes it.
 ## Current Canon
 
 ### Stage
-Reveal / flag / breach / **clear** loop under a finite **witness charge**
-budget, with **Witness Confirmation** (chord) as the first inference-rewarded
-action. Tiles are `unresolved | resolved | flagged`, the run phase is
-`active | breached | cleared`, and the player has a finite pool of direct
-observations that a successful confirmation can partially restore. The
-core identity loop — "spend certainty to make claims, restore trust through
-proof, stabilize the field" — is now playable end-to-end with both terminal
-states in place. Next substantive foundation decisions: first non-chord
-inference primitive (e.g. a cheaper partial-information "probe"), a
-deterministic replay buffer keyed off the action log, and a test harness.
-Still foundation work — not progression, metagame, or content.
+Reveal / flag / breach / clear loop under a finite **witness charge** budget,
+with **Witness Confirmation** (chord) for inference-rewarded claims and the
+**Witness Probe** (line scan) as the first structural-scan instrument.
+Tiles are `unresolved | resolved | flagged`, the run phase is
+`active | breached | cleared`, the player has a finite pool of direct
+observations, and they now have a second kind of observation available:
+spending extra charge to ask *about a region*, not about a tile. The core
+identity pivot — "spend certainty to make claims *or* to ask a better
+question" — is now expressed in the rules. Next substantive foundation
+decisions: a deterministic replay buffer keyed off the action log, a
+headless test harness, and the second probe geometry (row/column signature
+or rectangular scan) once we have one structural instrument in players'
+hands to calibrate against. Still foundation work — not progression,
+metagame, or content.
 
 ### Stack
 * **Language:** TypeScript (strict, `verbatimModuleSyntax`).
@@ -55,10 +58,10 @@ excavation bill.
 
 ### Engine surface (current)
 * `createGameState(config: BoardConfig): GameState` — produces an `active`
-  phase with `witness.charge = witness.max = config.witnessCharges` and
-  `witness.confirms = 0`.
+  phase with `witness.charge = witness.max = config.witnessCharges`,
+  `witness.confirms = 0`, and `lastProbe = null`.
 * `reduceGame(state, action): GameState` where action is one of
-  `hover | hoverClear | reveal | flag | confirm | regen`. Pure.
+  `hover | hoverClear | reveal | flag | confirm | probe | regen`. Pure.
 * `generateBoard(config)`: deterministic from
   `{width, height, mineCount, seed}`. `witnessCharges` is a gameplay-budget
   input that does not affect board generation — the board is the same under
@@ -99,13 +102,28 @@ excavation bill.
   (capped at `max`) and `witness.confirms` increments by 1. Refused
   confirmations (wrong tile state, zero adjacency, flag-count mismatch,
   no unresolved neighbors, breached phase) do not change state.
+* **Witness Probe (line scan)**: `probe` targets an unresolved tile with an
+  `orientation: 'horizontal' | 'vertical'`. The instrument scans a 5-cell
+  line centered on the target (clipped to board bounds), counts all mines
+  in the segment, and returns that count as a `ProbeReading` on
+  `state.lastProbe`. It does **not** reveal which cells are hazards — the
+  instrument buys *structure*, not certainty. Cost: 2 witness charge, on
+  acceptance only. Anti-collapse rule: refused unless the segment contains
+  at least 3 truly-`unresolved` cells (flagged and resolved do not count
+  toward the threshold), which prevents the probe from degenerating into
+  an expensive single-tile reveal when all but one cell is already known.
+  Tile state is untouched — the board's truth is the same before and
+  after; only the player's knowledge grows. Tunables
+  (`PROBE_TUNABLES.length | cost | minUnresolved`) live at engine file
+  scope and are re-exported so HUD copy reads from the same source as
+  the reducer.
 * First-click safety is intentionally NOT implemented: the seed fully
   determines the board, so the first reveal can legitimately detonate.
   The player learning to read the field is the game.
 
 ### What the visual proof does
-16×16 interactive grid with the full reveal / flag / confirm loop under a
-witness budget:
+16×16 interactive grid with the full reveal / flag / confirm / probe loop
+under a witness budget:
 * left-click on an unresolved tile resolves it and spends 1 witness charge;
   zero-adjacency regions flood-reveal for free; reveals with zero charge
   are refused
@@ -113,6 +131,12 @@ witness budget:
   dispatches `confirm` — the engine validates the flag-match condition and
   reveals the remaining unflagged neighbors as a group
 * right-click toggles a flag — always free
+* `h` arms a horizontal probe, `v` arms a vertical probe, pressing either
+  again (or `Esc`) disarms; while armed, the hovered 5-cell segment is
+  outlined in cyan, hover highlight is suppressed, and left-click on the
+  center spends 2 charge to return the segment's total hazard count
+  (no per-tile truth revealed); the HUD's probe block displays the last
+  reading's orientation, coordinate, cells scanned, and hazard count
 * a safe confirmation restores +1 charge (capped at max) and triggers a
   brief "witness confirmed · integrity restored" pill in the HUD, keyed
   off `witness.confirms` incrementing
@@ -604,3 +628,186 @@ off the action log, unit tests, any progression or metagame system, any
 post-clear summary (time-to-clear, reveals-used, confirms-completed), and
 any animated clear transition. Scope for this pass was terminal detection
 only — detection first, ceremony later.
+
+### 2026-04-23 — Claude Opus 4.7 (Witness Probe v1 — line scan)
+First non-chord inference instrument. The brief framed the pivot
+precisely: this is where the player stops asking "what is this tile?" and
+starts asking "what is true about this region?". The probe buys the
+hazard count of a 5-cell line centered on a target, without revealing
+which cells are hazards — structure, not certainty. Demoted three Canon
+sections. Verbatim:
+
+**Superseded — Stage:**
+> Reveal / flag / breach / **clear** loop under a finite **witness charge**
+> budget, with **Witness Confirmation** (chord) as the first inference-rewarded
+> action. Tiles are `unresolved | resolved | flagged`, the run phase is
+> `active | breached | cleared`, and the player has a finite pool of direct
+> observations that a successful confirmation can partially restore. The
+> core identity loop — "spend certainty to make claims, restore trust through
+> proof, stabilize the field" — is now playable end-to-end with both terminal
+> states in place. Next substantive foundation decisions: first non-chord
+> inference primitive (e.g. a cheaper partial-information "probe"), a
+> deterministic replay buffer keyed off the action log, and a test harness.
+> Still foundation work — not progression, metagame, or content.
+
+**Superseded — Engine surface (reducer signature):**
+> * `createGameState(config: BoardConfig): GameState` — produces an `active`
+>   phase with `witness.charge = witness.max = config.witnessCharges` and
+>   `witness.confirms = 0`.
+> * `reduceGame(state, action): GameState` where action is one of
+>   `hover | hoverClear | reveal | flag | confirm | regen`. Pure.
+
+**Superseded — Visual-proof header:**
+> 16×16 interactive grid with the full reveal / flag / confirm loop under a
+> witness budget:
+
+Design notes for this pass:
+- Probe is a new action, not a parameter on `reveal`. A probe has a
+  different target validation (must be unresolved, segment must have ≥3
+  unresolved cells), a different cost (2, not 1), a different effect (no
+  tile state changes, stores a `ProbeReading`), and a different replay
+  signature in the action log. Keeping it a distinct action type means
+  `[reveal, reveal, probe, reveal, confirm]` reads as exactly the play
+  sequence, not as a dispatch-within-a-dispatch.
+- Exactly one geometry shipped: the line, in two orientations. The brief
+  was explicit — no rectangles, no circles, no freeform, no row/column
+  Nonogram signatures. The principle: give the player one instrument they
+  can master before introducing a second. Second-instrument decisions
+  (full row/column counts, 3×3 blocks, constraint bloom) are held for a
+  later pass once we have usage data from the line.
+- **Anti-collapse rule: ≥ 3 truly-`unresolved` cells in the segment.**
+  Flagged cells *do not count* toward the threshold: a flag is a player
+  commitment, so a region full of flags already has (asserted) collapsed
+  ambiguity. The rule prevents the dominant cheese — probing a 4-resolved
+  + 1-unresolved segment to learn "is this one tile a mine?" for 2 charge,
+  which is strictly worse than a direct reveal. At 3 unresolved the probe
+  tells you *something about a multi-cell region* without reducing to a
+  binary question about a single cell. Clipped edge probes (3 or 4 cells
+  on-board) are accepted as long as they meet the same threshold — edges
+  are part of the field, not second-class; the instrument is just less
+  potent at the wall.
+- **Flagged cells are still counted in the hazard total.** The probe
+  returns ground truth: total mines in the segment. If a correctly
+  flagged cell is in the segment, it contributes 1 to the count. This is
+  intentional — it lets the probe *corroborate or contradict* the
+  player's flag reading. A probe that returns fewer hazards than the
+  player has flagged in the segment proves at least one flag is wrong.
+  That interaction was strong enough to keep "include flagged mines in
+  the count" over the alternative of "count only unresolved mines".
+- Cost set to 2 charge (vs. 1 for direct reveal). One direct reveal gets
+  you one tile's truth. Two charges on a probe get you a summary of five
+  tiles' collective hazard load — strictly more information-per-charge on
+  a well-chosen target, but *at the cost of preserved ambiguity*. The
+  probe is not a cheaper alternative to reveals; it is an instrument for
+  reading the field when per-tile reveals would be too expensive or too
+  risky. The 2× ratio is a starting point — narrow enough that players
+  will actually pay it on a hard board, wide enough that they feel the
+  cost and have to choose.
+- **Interaction model: mode toggle via keyboard (`h` / `v`, `Esc`).**
+  Rejected alternatives:
+  (a) a modifier click (Shift+click): conflicts with possible future
+      multi-select or marquee tooling and invisibly rewires the same
+      gesture, which breeds mis-clicks;
+  (b) a permanent probe button in the HUD: adds chrome and hides the
+      instrument behind a target-the-HUD-then-target-the-board round
+      trip;
+  (c) a cursor-cycle mode (one key cycles reveal/probe-h/probe-v/off):
+      nice economy but makes the current mode harder to read at a
+      glance.
+  A keyboard-armed mode with explicit orientation is closer to the
+  "deliberate instrument" framing the brief asked for. Pressing the same
+  orientation key a second time disarms (toggle affordance); pressing
+  the other orientation key switches without disarming (quick pivot);
+  `Esc` always disarms (universal affordance). The HUD shows an "armed"
+  pill when a mode is active and an "idle" label otherwise, so the
+  current state is legible without looking at the cursor.
+- **Mode is UI state, not engine state.** The reducer sees only the
+  `probe` action with its orientation; whether the player got there via
+  keyboard, button, modifier click, or a macro is invisible and
+  irrelevant to replay. This is the same principle that kept hover out
+  of deterministic play: inputs that affect rules go through the
+  reducer; inputs that affect *how clicks are interpreted* stay in the
+  UI layer. Replay of `[reveal, reveal, probe(3,4,'horizontal'),
+  reveal, confirm]` on the same seed produces an identical terminal
+  state, even though a replayer has no idea whether the original player
+  used `h` or some future cursor-mode button.
+- **Probe mode auto-exits on terminal phase.** If the run breaches or
+  clears while probe mode is armed, the mode drops to null — the HUD
+  indicator can't linger past a run ending, and reseed therefore starts
+  in a clean input state. Auto-exit uses a `useEffect` watching
+  `phase.kind`; it does not dispatch engine actions, so replay is
+  unaffected.
+- **Preview overlay geometry comes from the engine**, not from a
+  renderer-local copy of the 5-cell math. `probeSegment(w, h, x, y,
+  orientation)` is exported from the engine and consumed by both the
+  reducer (on `probe` action) and the renderer (on paint). If a future
+  pass changes the probe geometry (e.g., to 7-cell or to add diagonals),
+  the preview and the action stay synchronized by construction — the
+  class of "preview showed one thing, probe scanned another" bug cannot
+  happen without the same edit touching both. The renderer also
+  suppresses standalone hover on the segment center while probe mode is
+  armed so the cyan outline is the sole affordance.
+- **`lastProbe: ProbeReading | null` replaces on each probe rather than
+  appending to a log.** A log would be nice for a probe history panel,
+  but v1 didn't need one, and adding it would have forced a scroll/trim
+  UI decision that belongs to a later pass (the same pass that also
+  adds the replay buffer). The reading carries its own `cells` array
+  so the HUD displays the actual scanned length (3 or 4 for clipped
+  edge probes, 5 otherwise) without re-computing segment geometry.
+- **HUD copy biases operational, not arcade.** "witness probe",
+  "structural scan", "hazards detected", "armed/idle", "no probe
+  reading" — instrumentation register. Avoided "sonar", "ping",
+  "scanning…", "discovered N mines!". The probe block sits directly
+  under the witness-charge block because the two are the main
+  economy-shaping surfaces; reading flows charge → probe → field stats →
+  phase, which is the order the player thinks in during a decision.
+- **No refusal feedback surface yet.** A refused probe (wrong phase,
+  charge too low, target not unresolved, segment below threshold)
+  silently no-ops. The player can infer from "my charge didn't change
+  and no reading appeared" that the action was refused. A future pass
+  may add a transient "probe refused — segment too resolved" status
+  line, but it would need to store ephemeral UI state, and v1 didn't
+  need it enough to justify the shape.
+- Charge cost is deducted after every early-return guard, same as
+  `revealTile` — refused probes cost nothing. This is load-bearing for
+  the same reason reveal's "refused-is-free" rule is: a 2-charge
+  instrument that can charge you for a mis-click would feel punitive,
+  and the instrument's value comes from being a deliberate decision,
+  not a careful-fingers dexterity check.
+- `PROBE_TUNABLES` is re-exported so HUD labels read from the same
+  source as the reducer. If a future pass changes probe cost to 3, the
+  HUD hint text and note line update without manual edits. The three
+  values (`length`, `cost`, `minUnresolved`) sit at engine file scope
+  rather than on `BoardConfig`: they are mechanics-level tuning, not
+  per-seed run parameters — we don't want the same seed to play
+  differently because the tunable shifted between sessions.
+
+Files changed this pass:
+- `src/types/index.ts` — added `ProbeOrientation`, `ProbeReading`;
+  extended `GameState` with `lastProbe`.
+- `src/engine/state.ts` — added `probe` action variant, `probeTile`
+  reducer, `probeSegment` geometry helper, `PROBE_TUNABLES` constants;
+  initialized `lastProbe` in `createGameState`.
+- `src/engine/index.ts` — re-exported `probeSegment`, `PROBE_TUNABLES`.
+- `src/ui/GameView.tsx` — added `probeMode` UI state, keydown listener
+  (`h` / `v` / `Esc`), probe-mode-aware click routing through the
+  renderer's `onReveal` channel, phase-terminal auto-exit, render
+  overlay passthrough.
+- `src/ui/HUD.tsx` — added probe mode indicator, last-reading card,
+  empty state, probe hint lines. Read tunables from engine-re-export.
+- `src/render/BoardRenderer.ts` — added `RenderOverlay` param to
+  `render()`, preview set derivation via engine's `probeSegment`, inset
+  cyan outline on segment cells, hover suppressed on preview center.
+- `src/styles.css` — added `.hud-probe*` styles (mode pill, reading
+  card, empty state, note).
+
+Explicitly deferred (carried forward, with the probe primitive now
+resolved): left+right simultaneous chord, a probe *log* and in-HUD
+history review, transient refusal feedback ("probe refused — segment
+too resolved"), additional probe geometries (row/column signatures,
+3×3 block scan, constraint bloom), variable probe cost (distance-
+scaling, diminishing-returns pricing), replay buffer keyed off the
+action log, a headless test harness / unit tests, and any progression
+or metagame system. The brief continues to forbid shops, batteries,
+passive regen, inventory, backend, multiplayer, and campaign systems —
+still no cathedral.
