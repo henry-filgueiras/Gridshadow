@@ -45,10 +45,14 @@ export type GamePhase =
 
 // Witness charge is the player's finite budget for direct observation.
 // `charge` is what remains; `max` is the starting capacity, preserved for HUD
-// ratios and future analytics.
+// ratios and future analytics. `confirms` is a monotonic count of successful
+// safe Witness Confirmations — each one increments it by 1 regardless of
+// whether the restored charge was absorbed or capped, so the UI can show a
+// ritual-success pulse independently of the numeric charge value.
 export interface WitnessState {
   readonly charge: number;
   readonly max: number;
+  readonly confirms: number;
 }
 
 export interface GameState {

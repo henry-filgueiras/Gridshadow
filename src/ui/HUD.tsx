@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react';
 import { tallyTiles, witnessStatus } from '../engine';
 import type { GameState } from '../types';
 
@@ -6,12 +7,32 @@ interface HUDProps {
   onReseed: (seed: number) => void;
 }
 
+const RESTORE_FLASH_MS = 1800;
+
 export function HUD({ state, onReseed }: HUDProps) {
   const { config } = state.board;
   const tally = tallyTiles(state);
   const breach = state.phase.kind === 'breached' ? state.phase.at : null;
   const wStatus = witnessStatus(state);
-  const { charge, max } = state.witness;
+  const { charge, max, confirms } = state.witness;
+
+  // Confidence-restoration flash. The engine's `witness.confirms` counter
+  // increments monotonically on every successful safe Witness Confirmation.
+  // We detect increments and surface a brief pill. The timer itself is
+  // UI-ephemeral — engine state stays deterministic — and the ref-before-
+  // effect-body update avoids double-firing under StrictMode.
+  const prevConfirmsRef = useRef(confirms);
+  const [flashing, setFlashing] = useState(false);
+  useEffect(() => {
+    const prev = prevConfirmsRef.current;
+    prevConfirmsRef.current = confirms;
+    if (confirms > prev) {
+      setFlashing(true);
+      const id = window.setTimeout(() => setFlashing(false), RESTORE_FLASH_MS);
+      return () => window.clearTimeout(id);
+    }
+    return undefined;
+  }, [confirms]);
 
   return (
     <div className="hud">
@@ -45,6 +66,15 @@ export function HUD({ state, onReseed }: HUDProps) {
           {wStatus === 'exhausted'
             ? 'charge exhausted — inference only'
             : 'direct reveal cost: 1 charge'}
+        </div>
+        <div
+          className={`hud-witness-restore ${
+            flashing ? 'hud-witness-restore-on' : ''
+          }`}
+          role="status"
+          aria-live="polite"
+        >
+          {flashing ? 'witness confirmed · integrity restored' : ''}
         </div>
       </div>
 
@@ -82,6 +112,10 @@ export function HUD({ state, onReseed }: HUDProps) {
           <span className="hud-label">unresolved</span>
           <span className="hud-value">{tally.unresolved}</span>
         </div>
+        <div className="hud-row">
+          <span className="hud-label">confirms</span>
+          <span className="hud-value">{confirms}</span>
+        </div>
       </div>
 
       <div className="hud-divider" />
@@ -106,8 +140,10 @@ export function HUD({ state, onReseed }: HUDProps) {
       </div>
 
       <div className="hud-hint">
-        <div>left-click — resolve (costs 1 charge)</div>
+        <div>left-click unresolved — resolve (costs 1 charge)</div>
         <div>right-click — flag (free)</div>
+        <div>click numbered tile — confirm (when flags match)</div>
+        <div>successful confirm restores +1 charge</div>
       </div>
 
       <button

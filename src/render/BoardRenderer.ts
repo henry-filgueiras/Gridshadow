@@ -55,6 +55,7 @@ export interface BoardRendererEvents {
   onHoverClear(): void;
   onReveal(x: number, y: number): void;
   onFlag(x: number, y: number): void;
+  onConfirm(x: number, y: number): void;
 }
 
 export class BoardRenderer {
@@ -112,9 +113,26 @@ export class BoardRenderer {
         container.on('pointerover', () => this.events.onHover(hx, hy));
         container.on('pointerout', () => this.events.onHoverClear());
         container.on('pointerdown', (event: FederatedPointerEvent) => {
-          // button: 0 = left, 2 = right. Middle click is ignored.
-          if (event.button === 0) this.events.onReveal(hx, hy);
-          else if (event.button === 2) this.events.onFlag(hx, hy);
+          // button: 0 = left, 1 = middle, 2 = right. Middle and left-on-a-
+          // resolved-numbered-tile both request a Witness Confirmation; the
+          // engine rejects the action if preconditions aren't met, so the
+          // renderer doesn't duplicate gameplay rules — it only routes the
+          // most natural input for each tile state.
+          if (event.button === 1) {
+            this.events.onConfirm(hx, hy);
+            return;
+          }
+          if (event.button === 2) {
+            this.events.onFlag(hx, hy);
+            return;
+          }
+          if (event.button !== 0) return;
+          const tile = this.currentBoard?.tiles[hy * this.currentBoard.config.width + hx];
+          if (tile && tile.state === 'resolved' && !tile.isMine && tile.adjacentMines > 0) {
+            this.events.onConfirm(hx, hy);
+          } else {
+            this.events.onReveal(hx, hy);
+          }
         });
 
         const bg = new Graphics();

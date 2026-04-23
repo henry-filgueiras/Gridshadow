@@ -11,15 +11,17 @@ archive with a new dated entry that supersedes it.
 ## Current Canon
 
 ### Stage
-Reveal / flag / breach loop implemented on top of a finite **witness charge**
-budget. The board speaks Minesweeper with Witness Protocol vocabulary: tiles
-are `unresolved | resolved | flagged`, the run phase is `active` or
-`breached`, and the player has a finite pool of direct observations. The
-identity pivot — "information is a resource" — is now expressed in the
-rules, not just the skin. Next substantive foundation decisions: win
-condition (full resolution without breach), chord interactions, and the
-first honest inference-assist primitive. Still foundation work — not
-progression, metagame, or content.
+Reveal / flag / breach loop under a finite **witness charge** budget, with
+**Witness Confirmation** (chord) as the first inference-rewarded action.
+Tiles are `unresolved | resolved | flagged`, the run phase is `active` or
+`breached`, and the player has a finite pool of direct observations that a
+successful confirmation can partially restore. The core identity loop —
+"spend certainty to make claims, restore trust through proof" — is now
+playable end-to-end. Next substantive foundation decisions: win condition
+(full resolution without breach), first non-chord inference primitive
+(e.g. a cheaper partial-information "probe"), and a deterministic replay
+buffer keyed off the action log. Still foundation work — not progression,
+metagame, or content.
 
 ### Stack
 * **Language:** TypeScript (strict, `verbatimModuleSyntax`).
@@ -53,9 +55,10 @@ excavation bill.
 
 ### Engine surface (current)
 * `createGameState(config: BoardConfig): GameState` — produces an `active`
-  phase with `witness.charge = witness.max = config.witnessCharges`.
+  phase with `witness.charge = witness.max = config.witnessCharges` and
+  `witness.confirms = 0`.
 * `reduceGame(state, action): GameState` where action is one of
-  `hover | hoverClear | reveal | flag | regen`. Pure.
+  `hover | hoverClear | reveal | flag | confirm | regen`. Pure.
 * `generateBoard(config)`: deterministic from
   `{width, height, mineCount, seed}`. `witnessCharges` is a gameplay-budget
   input that does not affect board generation — the board is the same under
@@ -66,35 +69,59 @@ excavation bill.
   selector used by the HUD so urgency thresholds live in one place. Low is
   charge ≤ 3 OR charge ≤ 25% of max (absolute floor beats ratio as max
   shrinks); exhausted is charge === 0.
-* `reveal` is the only action that can change `phase`: revealing a mine
-  transitions to `{ kind: 'breached', at }`. Both `reveal` and `flag` are
-  no-ops while breached; `regen` resets phase to `active` and refills
-  charge to max.
+* `reveal` and `confirm` are the only actions that can change `phase`: a
+  mine reveal — whether by a direct `reveal` or by a chord-triggered reveal
+  of a wrongly-flagged neighbor — transitions to `{ kind: 'breached', at }`.
+  `reveal`, `flag`, and `confirm` are all no-ops while breached; `regen`
+  resets phase to `active` and refills charge to max.
 * Reveal cascades: revealing a tile with `adjacentMines === 0` floods through
   connected zero-adjacency tiles, revealing their numbered borders too.
-  Flagged tiles stop propagation.
+  Flagged tiles stop propagation. The cascade core lives in a private
+  `revealAt(tiles, w, h, x, y)` helper shared by `reveal` and `confirm` so
+  the two paths can't diverge.
 * **Witness charge**: a finite integer budget in `GameState.witness`. Each
   effectful direct reveal consumes 1 charge; cascade expansion, flagging,
-  and denied reveals (wrong state / breached / zero charge) are free. When
-  charge reaches 0, `reveal` becomes a no-op — the player must continue by
-  inference, flagging, or deliberate risk. No regen, no shops, no batteries.
+  confirmation, and denied actions are free. When charge reaches 0, `reveal`
+  becomes a no-op; `confirm` remains available — the game continues through
+  inference and claim-making. No passive regen, no shops, no batteries.
   Default budget: 12 charges on a 16×16, 40-hazard field.
+* **Witness Confirmation (chord)**: `confirm` targets a resolved numbered
+  tile. If the count of adjacent flags equals `tile.adjacentMines` AND at
+  least one adjacent unresolved, unflagged neighbor exists, every such
+  neighbor is revealed (using the same cascade core as `reveal`). If any
+  revealed neighbor is a mine the run breaches at that neighbor; otherwise
+  the confirmation is successful — `witness.charge` is incremented by 1
+  (capped at `max`) and `witness.confirms` increments by 1. Refused
+  confirmations (wrong tile state, zero adjacency, flag-count mismatch,
+  no unresolved neighbors, breached phase) do not change state.
 * First-click safety is intentionally NOT implemented: the seed fully
   determines the board, so the first reveal can legitimately detonate.
   The player learning to read the field is the game.
 
 ### What the visual proof does
-16×16 interactive grid with the full reveal/flag loop under a witness budget:
-* left-click resolves a tile and spends 1 witness charge; zero-adjacency
-  regions flood-reveal for free; reveals with zero charge are refused
+16×16 interactive grid with the full reveal / flag / confirm loop under a
+witness budget:
+* left-click on an unresolved tile resolves it and spends 1 witness charge;
+  zero-adjacency regions flood-reveal for free; reveals with zero charge
+  are refused
+* left-click on a resolved numbered tile *or* middle-click anywhere
+  dispatches `confirm` — the engine validates the flag-match condition and
+  reveals the remaining unflagged neighbors as a group
 * right-click toggles a flag — always free
+* a safe confirmation restores +1 charge (capped at max) and triggers a
+  brief "witness confirmed · integrity restored" pill in the HUD, keyed
+  off `witness.confirms` incrementing
+* a confirmation with wrong flags breaches naturally through a revealed
+  hazard — same breach path as a direct reveal
 * revealing a hazard transitions phase to `breached`, renders remaining hazards
   (render-only — engine leaves them `unresolved`), tints mis-flagged tiles red,
   and disables further pointer actions
 * HUD shows witness charge with a meter and tiered coloring
-  (steady → low at ≤25% or ≤3 remaining → exhausted at 0), seed, field dims,
-  hazard count, tile tallies, cursor, phase, and a breach banner when applicable
-* reseed regenerates a fresh active board and refills charge to max
+  (steady → low at ≤25% or ≤3 remaining → exhausted at 0), confirmation
+  count, seed, field dims, hazard count, tile tallies, cursor, phase, and
+  a breach banner when applicable
+* reseed regenerates a fresh active board, refills charge to max, and
+  resets confirms to 0
 
 ### Per-exchange process (from CLAUDE.md)
 1. Update this file.
@@ -311,3 +338,135 @@ resolved): win detection, chord, a replay buffer keyed off dispatched
 actions, unit tests, variable-cost observations (peek, constraint probe,
 hazard bloom), and any regen / shop / battery mechanic. The brief was
 explicit on the last set: scarcity only, no relief mechanic yet.
+
+### 2026-04-23 — Claude Opus 4.7 (witness confirmation + confidence restore)
+Added the Witness Confirmation action (chord) and a proof-gated charge
+restoration. This closes the v1 identity loop: charge forces restraint,
+flagging commits to a read, confirmation ratifies that read, successful
+confirmations restore a small amount of trust. "Proof restores trust, not
+guesses." Demoted three Canon sections. Verbatim:
+
+**Superseded — Stage:**
+> Reveal / flag / breach loop implemented on top of a finite **witness charge**
+> budget. The board speaks Minesweeper with Witness Protocol vocabulary: tiles
+> are `unresolved | resolved | flagged`, the run phase is `active` or
+> `breached`, and the player has a finite pool of direct observations. The
+> identity pivot — "information is a resource" — is now expressed in the
+> rules, not just the skin. Next substantive foundation decisions: win
+> condition (full resolution without breach), chord interactions, and the
+> first honest inference-assist primitive. Still foundation work — not
+> progression, metagame, or content.
+
+**Superseded — Engine surface (current):**
+> * `createGameState(config: BoardConfig): GameState` — produces an `active`
+>   phase with `witness.charge = witness.max = config.witnessCharges`.
+> * `reduceGame(state, action): GameState` where action is one of
+>   `hover | hoverClear | reveal | flag | regen`. Pure.
+> * `generateBoard(config)`: deterministic from
+>   `{width, height, mineCount, seed}`. `witnessCharges` is a gameplay-budget
+>   input that does not affect board generation — the board is the same under
+>   any charge count for a given seed.
+> * `tallyTiles(state): TileTally` — pure derivation of
+>   unresolved / resolved / flagged counts, for HUD and future observers.
+> * `witnessStatus(state): 'steady' | 'low' | 'exhausted'` — thresholded
+>   selector used by the HUD so urgency thresholds live in one place. Low is
+>   charge ≤ 3 OR charge ≤ 25% of max (absolute floor beats ratio as max
+>   shrinks); exhausted is charge === 0.
+> * `reveal` is the only action that can change `phase`: revealing a mine
+>   transitions to `{ kind: 'breached', at }`. Both `reveal` and `flag` are
+>   no-ops while breached; `regen` resets phase to `active` and refills
+>   charge to max.
+> * Reveal cascades: revealing a tile with `adjacentMines === 0` floods through
+>   connected zero-adjacency tiles, revealing their numbered borders too.
+>   Flagged tiles stop propagation.
+> * **Witness charge**: a finite integer budget in `GameState.witness`. Each
+>   effectful direct reveal consumes 1 charge; cascade expansion, flagging,
+>   and denied reveals (wrong state / breached / zero charge) are free. When
+>   charge reaches 0, `reveal` becomes a no-op — the player must continue by
+>   inference, flagging, or deliberate risk. No regen, no shops, no batteries.
+>   Default budget: 12 charges on a 16×16, 40-hazard field.
+> * First-click safety is intentionally NOT implemented: the seed fully
+>   determines the board, so the first reveal can legitimately detonate.
+>   The player learning to read the field is the game.
+
+**Superseded — What the visual proof does:**
+> 16×16 interactive grid with the full reveal/flag loop under a witness budget:
+> * left-click resolves a tile and spends 1 witness charge; zero-adjacency
+>   regions flood-reveal for free; reveals with zero charge are refused
+> * right-click toggles a flag — always free
+> * revealing a hazard transitions phase to `breached`, renders remaining hazards
+>   (render-only — engine leaves them `unresolved`), tints mis-flagged tiles red,
+>   and disables further pointer actions
+> * HUD shows witness charge with a meter and tiered coloring
+>   (steady → low at ≤25% or ≤3 remaining → exhausted at 0), seed, field dims,
+>   hazard count, tile tallies, cursor, phase, and a breach banner when applicable
+> * reseed regenerates a fresh active board and refills charge to max
+
+Design notes for this pass:
+- Confirm is its own action (`{ type: 'confirm', x, y }`), not a parameter
+  to `reveal`. Reasons: a replay log of `[reveal, reveal, flag, confirm,
+  flag, confirm, …]` tells a cleaner story than if they were conflated;
+  the cost model differs (reveal consumes, confirm restores); and the
+  refusal conditions are different enough that a single reducer path would
+  have become a dispatch inside a dispatch.
+- Reveal and confirm share a private `revealAt(tiles, w, h, x, y) →
+  detonated` helper. Before this pass, cascade BFS lived inside
+  `revealTile`. Pulling it out was the prerequisite for chord: confirm
+  needs to reveal *n* neighbors as a batch, and I was not willing to
+  re-implement the flood. Keeping a single cascade core also eliminates
+  the class of bugs where chord's reveal path would drift from direct
+  reveal's (one famous Minesweeper clone had chord-revealed zeros that
+  didn't flood — this architecture prevents that).
+- **Chord costs nothing but restores on success.** This is the central
+  economy. Confirmation is not a reveal action — it's a *claim*. The
+  player isn't paying to look; they're paying earlier (flagging costs
+  attention; direct reveals cost charge) and then, at the moment of
+  ratification, the protocol either detonates (your read was wrong) or
+  returns a small amount of trust (your read was right). The design
+  explicitly does not reward flag placement or guess-clicks; it rewards
+  the specific act of staking a conclusion that turns out correct.
+- Restoration is **+1 capped**, not proportional. A larger or scaling
+  reward would turn confirmation into the dominant loop — players would
+  chord-farm for charge. +1 per confirmation is enough to extend a
+  difficult run, not enough to make confirmation the primary economy.
+  Cap at `max` ensures restoration can't exceed the starting budget; if
+  a future pass introduces variable max (e.g. a hard-mode penalty that
+  burns a slot), the cap will correctly follow.
+- "Meaningful safe resolution" gate: if flags match but all unflagged
+  neighbors are already resolved (common after a wide cascade into a
+  numbered border), the action is a no-op — no state change, no counter
+  increment, no restoration. Rewarding confirmations that *do nothing*
+  would be gamification; the brief explicitly asked to reward demonstrated
+  inference, not theatrics.
+- Wrong-flag confirmation breaches on the first mine the chord reveals,
+  not all of them. Once phase is `breached`, subsequent tile reveals in
+  the same action are short-circuited — the action stops, the breach
+  coordinate is the first detonation, and the player sees the single
+  point where their read diverged. Revealing every mine on a bad chord
+  would hide that information under a rug of red.
+- `witness.confirms` is a monotonic counter on engine state, not a
+  one-shot flag. The HUD reads the counter, remembers the prior value in
+  a ref, and flashes when it increments — the flash itself is UI state
+  (a `setTimeout`-driven boolean), so nothing about presentation leaks
+  into the deterministic replay. A counter was cleaner than a "last
+  event" field because it has no "clear" path and it also gives us a
+  free run stat for later analytics.
+- Input routing: left-click on a resolved numbered tile is routed as
+  `confirm`, left-click on an unresolved tile as `reveal`. Middle-click
+  always sends `confirm` as an explicit ritual input. Renderer peeks at
+  `this.currentBoard` to decide; this is *observational* (reading a
+  state snapshot it already owns), not *authorial* (it's not deciding
+  outcomes — the engine still validates). Classic left+right-simultaneous
+  chord is not implemented; middle-click + auto-chord cover the two
+  mental models players arrive with.
+- HUD hint text lists the four interactions as operational instructions:
+  resolve / flag / confirm-when-match / successful-confirm-restores. This
+  is the minimum language to make the economy self-teaching on a fresh
+  run. No tutorial; no modal.
+
+Explicitly deferred: win detection, left+right simultaneous chord,
+variable-cost observations (peek, constraint probe, hazard bloom),
+replay buffer keyed off the action log, unit tests, any progression
+or metagame system. The brief continues to forbid shops, batteries,
+passive regen, inventory, backend, multiplayer, and campaign systems —
+still no cathedral.

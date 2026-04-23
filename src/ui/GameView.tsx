@@ -63,6 +63,7 @@ export function GameView() {
         onHoverClear: () => dispatch({ type: 'hoverClear' }),
         onReveal: (x, y) => dispatch({ type: 'reveal', x, y }),
         onFlag: (x, y) => dispatch({ type: 'flag', x, y }),
+        onConfirm: (x, y) => dispatch({ type: 'confirm', x, y }),
       });
 
       app = instance;
