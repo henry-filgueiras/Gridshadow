@@ -1,0 +1,105 @@
+:root {
+  color-scheme: dark;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.4;
+  color: #c7d1db;
+  background: #060b10;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+.game-view {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+}
+
+.board-host {
+  position: absolute;
+  inset: 0;
+}
+
+.board-host canvas {
+  display: block;
+}
+
+.hud {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  min-width: 180px;
+  padding: 12px 14px;
+  background: rgba(10, 16, 22, 0.82);
+  border: 1px solid #1f2a36;
+  border-radius: 4px;
+  backdrop-filter: blur(6px);
+  pointer-events: auto;
+  user-select: none;
+}
+
+.hud-title {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #7effff;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #1f2a36;
+}
+
+.hud-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 2px 0;
+}
+
+.hud-label {
+  color: #5a6d80;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.hud-value {
+  color: #c7d1db;
+  font-variant-numeric: tabular-nums;
+}
+
+.hud-button {
+  margin-top: 10px;
+  width: 100%;
+  padding: 6px 10px;
+  background: #112030;
+  color: #c7d1db;
+  border: 1px solid #2d3a48;
+  border-radius: 3px;
+  font: inherit;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.hud-button:hover {
+  background: #183148;
+  border-color: #4a6b8a;
+}
+
+.hud-button:active {
+  background: #2a7a78;
+  border-color: #7effff;
+}
