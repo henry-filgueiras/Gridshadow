@@ -22,6 +22,11 @@ const TILE_RESOLVED = 0x0a1118;
 const TILE_FLAGGED = 0x221a10;
 const TILE_MINE_REVEALED = 0x2a0e0e;
 const TILE_BREACH = 0x5a1a1a;
+// Cleared-phase: hazards sit dormant (desaturated) and stabilized safe tiles
+// pick up a faint cyan wash so the field reads as resolved, not inert.
+const TILE_MINE_STABILIZED = 0x0f1a22;
+const TILE_RESOLVED_STABILIZED = 0x0e1a22;
+const TILE_FLAGGED_STABILIZED = 0x12202a;
 
 const STROKE_UNRESOLVED = 0x0d1218;
 const STROKE_UNRESOLVED_HOVER = 0x4a6b8a;
@@ -29,6 +34,7 @@ const STROKE_RESOLVED = 0x1a252f;
 const STROKE_FLAGGED = 0x6a4a1a;
 const STROKE_MINE_REVEALED = 0x6a2a2a;
 const STROKE_BREACH = 0xff4655;
+const STROKE_STABILIZED = 0x2a5a6a;
 
 // Constraint-count glyph colors: cool → warm as the region's pressure rises.
 const CONSTRAINT_COLORS: readonly number[] = [
@@ -46,6 +52,11 @@ const COLOR_FLAG_GLYPH = 0xffcf7e;
 const COLOR_FLAG_GLYPH_WRONG = 0xff4655;
 const COLOR_MINE_GLYPH = 0xff4655;
 const COLOR_BREACH_GLYPH = 0xffe0e0;
+// Cleared-phase glyph colors — hazards become dormant sentinels, correctly
+// flagged tiles read as corroborated, safe tiles keep their constraint
+// colors (they already tell the truth).
+const COLOR_MINE_GLYPH_STABILIZED = 0x7a8a95;
+const COLOR_FLAG_GLYPH_STABILIZED = 0x7effff;
 
 const GLYPH_FLAG = '⚑';
 const GLYPH_MINE = '●';
@@ -165,11 +176,19 @@ export class BoardRenderer {
     const breachAt: Coord | null =
       state.phase.kind === 'breached' ? state.phase.at : null;
     const breached = breachAt !== null;
+    const cleared = state.phase.kind === 'cleared';
 
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
         const idx = y * width + x;
-        this.paintTile(state.board.tiles[idx]!, idx, state, breached, breachAt);
+        this.paintTile(
+          state.board.tiles[idx]!,
+          idx,
+          state,
+          breached,
+          breachAt,
+          cleared,
+        );
       }
     }
   }
@@ -180,11 +199,15 @@ export class BoardRenderer {
     state: GameState,
     breached: boolean,
     breachAt: Coord | null,
+    cleared: boolean,
   ): void {
     const bg = this.tileBackgrounds[idx]!;
     const glyph = this.tileGlyphs[idx]!;
+    // Hover highlight is suppressed in any terminal phase — the field is no
+    // longer interactive, so the pointer should stop "suggesting" reveals.
     const isHover =
       !breached &&
+      !cleared &&
       state.cursor?.x === tile.x &&
       state.cursor?.y === tile.y;
     const isBreachTile =
@@ -204,8 +227,8 @@ export class BoardRenderer {
         text = GLYPH_MINE;
         color = isBreachTile ? COLOR_BREACH_GLYPH : COLOR_MINE_GLYPH;
       } else {
-        fill = TILE_RESOLVED;
-        stroke = STROKE_RESOLVED;
+        fill = cleared ? TILE_RESOLVED_STABILIZED : TILE_RESOLVED;
+        stroke = cleared ? STROKE_STABILIZED : STROKE_RESOLVED;
         if (tile.adjacentMines > 0) {
           text = String(tile.adjacentMines);
           const ci = Math.min(
@@ -216,21 +239,31 @@ export class BoardRenderer {
         }
       }
     } else if (tile.state === 'flagged') {
-      fill = TILE_FLAGGED;
-      stroke = STROKE_FLAGGED;
+      fill = cleared ? TILE_FLAGGED_STABILIZED : TILE_FLAGGED;
+      stroke = cleared ? STROKE_STABILIZED : STROKE_FLAGGED;
       text = GLYPH_FLAG;
       // Mis-flag on breach: keep the flag but tint it so the operator can
-      // see where their reading diverged from the field.
-      color = breached && !tile.isMine ? COLOR_FLAG_GLYPH_WRONG : COLOR_FLAG_GLYPH;
+      // see where their reading diverged from the field. On clear, every
+      // remaining flagged tile is necessarily a hazard (all safe tiles are
+      // resolved), so flags read as corroborated — a quiet cyan.
+      if (cleared) {
+        color = COLOR_FLAG_GLYPH_STABILIZED;
+      } else if (breached && !tile.isMine) {
+        color = COLOR_FLAG_GLYPH_WRONG;
+      } else {
+        color = COLOR_FLAG_GLYPH;
+      }
     } else {
       // unresolved
-      if (breached && tile.isMine) {
-        // Render-time reveal of remaining hazards on breach. Engine state
-        // remains 'unresolved' — this is purely observability.
-        fill = TILE_MINE_REVEALED;
-        stroke = STROKE_MINE_REVEALED;
+      if ((breached || cleared) && tile.isMine) {
+        // Render-time reveal of remaining hazards on terminal phases. Engine
+        // state remains 'unresolved' — this is purely observability, so
+        // replays and audits can still distinguish `detonated` /
+        // `resolved-by-cascade` / `merely-exposed-by-ui`.
+        fill = cleared ? TILE_MINE_STABILIZED : TILE_MINE_REVEALED;
+        stroke = cleared ? STROKE_STABILIZED : STROKE_MINE_REVEALED;
         text = GLYPH_MINE;
-        color = COLOR_MINE_GLYPH;
+        color = cleared ? COLOR_MINE_GLYPH_STABILIZED : COLOR_MINE_GLYPH;
       } else if (isHover) {
         fill = TILE_UNRESOLVED_HOVER;
         stroke = STROKE_UNRESOLVED_HOVER;

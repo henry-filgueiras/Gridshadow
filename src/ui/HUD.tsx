@@ -13,6 +13,7 @@ export function HUD({ state, onReseed }: HUDProps) {
   const { config } = state.board;
   const tally = tallyTiles(state);
   const breach = state.phase.kind === 'breached' ? state.phase.at : null;
+  const cleared = state.phase.kind === 'cleared';
   const wStatus = witnessStatus(state);
   const { charge, max, confirms } = state.witness;
 
@@ -44,6 +45,13 @@ export function HUD({ state, onReseed }: HUDProps) {
           <div className="hud-breach-detail">
             detonation at {breach.x},{breach.y}
           </div>
+        </div>
+      )}
+
+      {cleared && (
+        <div className="hud-cleared" role="status">
+          <div className="hud-cleared-label">field stabilized</div>
+          <div className="hud-cleared-detail">witness protocol complete</div>
         </div>
       )}
 
@@ -131,10 +139,14 @@ export function HUD({ state, onReseed }: HUDProps) {
           <span className="hud-label">phase</span>
           <span
             className={`hud-value ${
-              state.phase.kind === 'breached' ? 'hud-value-breach' : ''
+              state.phase.kind === 'breached'
+                ? 'hud-value-breach'
+                : state.phase.kind === 'cleared'
+                ? 'hud-value-cleared'
+                : ''
             }`}
           >
-            {state.phase.kind}
+            {state.phase.kind === 'cleared' ? 'stabilized' : state.phase.kind}
           </span>
         </div>
       </div>

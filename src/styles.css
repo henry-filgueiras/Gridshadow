@@ -146,6 +146,38 @@ body,
   letter-spacing: 0.1em;
 }
 
+.hud-value-cleared {
+  color: #7effff;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.hud-cleared {
+  background: rgba(10, 30, 36, 0.85);
+  border: 1px solid #7effff;
+  border-radius: 3px;
+  padding: 8px 10px;
+  margin-bottom: 12px;
+  text-align: center;
+  box-shadow: 0 0 0 1px rgba(126, 255, 255, 0.12);
+}
+
+.hud-cleared-label {
+  font-size: 12px;
+  font-weight: bold;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: #7effff;
+  margin-bottom: 3px;
+}
+
+.hud-cleared-detail {
+  font-size: 11px;
+  color: #a6e9e9;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
 .hud-hint {
   margin-top: 12px;
   padding-top: 10px;

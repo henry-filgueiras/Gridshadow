@@ -11,17 +11,17 @@ archive with a new dated entry that supersedes it.
 ## Current Canon
 
 ### Stage
-Reveal / flag / breach loop under a finite **witness charge** budget, with
-**Witness Confirmation** (chord) as the first inference-rewarded action.
-Tiles are `unresolved | resolved | flagged`, the run phase is `active` or
-`breached`, and the player has a finite pool of direct observations that a
-successful confirmation can partially restore. The core identity loop —
-"spend certainty to make claims, restore trust through proof" — is now
-playable end-to-end. Next substantive foundation decisions: win condition
-(full resolution without breach), first non-chord inference primitive
-(e.g. a cheaper partial-information "probe"), and a deterministic replay
-buffer keyed off the action log. Still foundation work — not progression,
-metagame, or content.
+Reveal / flag / breach / **clear** loop under a finite **witness charge**
+budget, with **Witness Confirmation** (chord) as the first inference-rewarded
+action. Tiles are `unresolved | resolved | flagged`, the run phase is
+`active | breached | cleared`, and the player has a finite pool of direct
+observations that a successful confirmation can partially restore. The
+core identity loop — "spend certainty to make claims, restore trust through
+proof, stabilize the field" — is now playable end-to-end with both terminal
+states in place. Next substantive foundation decisions: first non-chord
+inference primitive (e.g. a cheaper partial-information "probe"), a
+deterministic replay buffer keyed off the action log, and a test harness.
+Still foundation work — not progression, metagame, or content.
 
 ### Stack
 * **Language:** TypeScript (strict, `verbatimModuleSyntax`).
@@ -69,11 +69,16 @@ excavation bill.
   selector used by the HUD so urgency thresholds live in one place. Low is
   charge ≤ 3 OR charge ≤ 25% of max (absolute floor beats ratio as max
   shrinks); exhausted is charge === 0.
-* `reveal` and `confirm` are the only actions that can change `phase`: a
+* `reveal` and `confirm` are the only actions that can change `phase`. A
   mine reveal — whether by a direct `reveal` or by a chord-triggered reveal
   of a wrongly-flagged neighbor — transitions to `{ kind: 'breached', at }`.
-  `reveal`, `flag`, and `confirm` are all no-ops while breached; `regen`
-  resets phase to `active` and refills charge to max.
+  A safe action that leaves every non-hazard tile `resolved` transitions to
+  `{ kind: 'cleared' }`. Breach takes priority: if a single action could
+  trigger both, breach wins — clear is only evaluated on the non-breach
+  branch. Flag state is irrelevant to clear detection — flags are player
+  commitments, not the truth source. `reveal`, `flag`, and `confirm` are
+  all no-ops while breached or cleared; `regen` resets phase to `active`
+  and refills charge to max.
 * Reveal cascades: revealing a tile with `adjacentMines === 0` floods through
   connected zero-adjacency tiles, revealing their numbered borders too.
   Flagged tiles stop propagation. The cascade core lives in a private
@@ -116,10 +121,16 @@ witness budget:
 * revealing a hazard transitions phase to `breached`, renders remaining hazards
   (render-only — engine leaves them `unresolved`), tints mis-flagged tiles red,
   and disables further pointer actions
+* resolving the last non-hazard tile transitions phase to `cleared`, renders
+  remaining hazards in a dormant cyan (also render-only — engine leaves them
+  `unresolved`), recolors the stabilized field in a quiet cyan wash, and
+  disables further pointer actions
 * HUD shows witness charge with a meter and tiered coloring
   (steady → low at ≤25% or ≤3 remaining → exhausted at 0), confirmation
-  count, seed, field dims, hazard count, tile tallies, cursor, phase, and
-  a breach banner when applicable
+  count, seed, field dims, hazard count, tile tallies, cursor, phase
+  (`active | breached | stabilized`), and a breach or stabilization banner
+  as applicable (the stabilization banner reads "field stabilized · witness
+  protocol complete")
 * reseed regenerates a fresh active board, refills charge to max, and
   resets confirms to 0
 
@@ -470,3 +481,126 @@ replay buffer keyed off the action log, unit tests, any progression
 or metagame system. The brief continues to forbid shops, batteries,
 passive regen, inventory, backend, multiplayer, and campaign systems —
 still no cathedral.
+
+### 2026-04-23 — Claude Opus 4.7 (terminal clear state)
+Bug report: a 16×16 board with 40 hazards reached 216 resolved / 0
+unresolved with `phase: active` — no win detection existed. This was not
+an accounting bug; it was a missing success phase. Added `cleared` as a
+terminal phase alongside `breached`, wired clear detection into the reveal
+and confirm paths, and surfaced the state in the HUD and renderer. Demoted
+three Canon sections. Verbatim:
+
+**Superseded — Stage:**
+> Reveal / flag / breach loop under a finite **witness charge** budget, with
+> **Witness Confirmation** (chord) as the first inference-rewarded action.
+> Tiles are `unresolved | resolved | flagged`, the run phase is `active` or
+> `breached`, and the player has a finite pool of direct observations that a
+> successful confirmation can partially restore. The core identity loop —
+> "spend certainty to make claims, restore trust through proof" — is now
+> playable end-to-end. Next substantive foundation decisions: win condition
+> (full resolution without breach), first non-chord inference primitive
+> (e.g. a cheaper partial-information "probe"), and a deterministic replay
+> buffer keyed off the action log. Still foundation work — not progression,
+> metagame, or content.
+
+**Superseded — Engine surface bullet (phase transitions):**
+> * `reveal` and `confirm` are the only actions that can change `phase`: a
+>   mine reveal — whether by a direct `reveal` or by a chord-triggered reveal
+>   of a wrongly-flagged neighbor — transitions to `{ kind: 'breached', at }`.
+>   `reveal`, `flag`, and `confirm` are all no-ops while breached; `regen`
+>   resets phase to `active` and refills charge to max.
+
+**Superseded — Visual-proof tail:**
+> * revealing a hazard transitions phase to `breached`, renders remaining hazards
+>   (render-only — engine leaves them `unresolved`), tints mis-flagged tiles red,
+>   and disables further pointer actions
+> * HUD shows witness charge with a meter and tiered coloring
+>   (steady → low at ≤25% or ≤3 remaining → exhausted at 0), confirmation
+>   count, seed, field dims, hazard count, tile tallies, cursor, phase, and
+>   a breach banner when applicable
+> * reseed regenerates a fresh active board, refills charge to max, and
+>   resets confirms to 0
+
+Design notes for this pass:
+- Clear-condition rule: `every tile t where !t.isMine has t.state === 'resolved'`.
+  Flags are irrelevant. This is load-bearing: flags are player commitments,
+  not the truth source, so a win condition that required "all mines flagged"
+  would either (a) force the player to flag every hazard even when the
+  remaining numbered field already proves them out, or (b) let a misread —
+  flag-a-safe-tile, skip-a-hazard — pass as a win. Neither is acceptable.
+  The truth source is `isMine + state`; flags are UI annotation.
+- `GamePhase` extended to `active | breached | cleared`. Tagged union stays
+  clean: `cleared` carries no extra fields (the whole board is the proof).
+  All existing guards that check `phase.kind !== 'active'` now correctly
+  reject input in both terminal states without special-casing.
+- Clear detection lives in a shared `resolvePhase(tiles)` helper, called
+  from both `revealTile` and `confirmTile` on the non-breach branch.
+  Reasons this is shared, not inlined: reveal and confirm already share
+  the cascade core; their clear paths should share the definition of
+  "cleared" for the same reason — the moment those two drift is the
+  moment chord-win and reveal-win diverge on an edge case nobody notices
+  until a player posts a screenshot.
+- **Breach takes priority over clear.** If a single action both breaches
+  and, under a pathological tiles array, satisfies the all-safe-resolved
+  predicate, breach wins. In practice this cannot happen with the current
+  reveal semantics (a detonated tile is a mine, so "all safe resolved"
+  was already true before the detonation — meaning the previous action
+  should have transitioned to cleared first, and no further action is
+  accepted in a terminal phase). But encoding the priority explicitly
+  costs one conditional and removes an entire class of "what if" from
+  future contributors' minds. The rule is: compute the new tiles array,
+  check for breach first, only evaluate clear on the non-breach branch.
+- `resolvePhase` is O(total tiles) per effectful reveal or confirm action.
+  At 16×16 that's 256 reads on an action. Derived state, not stored:
+  caching a "safe tiles remaining" counter on `GameState` would save the
+  scan but would also introduce a second source of truth about board
+  completion, and the sync-bug tax on that is bigger than the scan cost.
+  If boards ever get large enough that this matters (≥128×128), revisit —
+  until then, scan.
+- Render behavior on clear mirrors breach's observability principle:
+  remaining hazards are rendered (so the operator can see the field they
+  stabilized) but engine state is not mutated — hazards stay `unresolved`,
+  so a replay or audit can still distinguish tiles the player actually
+  resolved from tiles the UI merely exposed. The cleared palette is cyan-
+  washed rather than red-washed: stabilized field, not detonated field.
+  Flags on clear read as corroborated (quiet cyan) since every remaining
+  flagged tile is necessarily a hazard once all safe tiles are resolved.
+- HUD banner language: "field stabilized · witness protocol complete".
+  Avoided the generic "you win" — the brief asked for Witness Protocol
+  vocabulary, and `stabilized` carries the reactor-operator register the
+  rest of the HUD already uses. Phase value renders as `stabilized`
+  rather than `cleared` for the same reason (the two words mean the same
+  thing in this game; `stabilized` reads as an action the operator
+  performed, `cleared` reads as a genre-convention status).
+- Hover highlight is suppressed in both terminal phases (`breached ||
+  cleared`). Pointer-down events still dispatch `reveal / flag / confirm`;
+  the engine's phase guard no-ops them. That split — render-side suppress
+  the *affordance*, engine-side reject the *effect* — keeps the renderer
+  from having to know the current phase's input policy in detail.
+- No timers. No random behavior. No UI-owned success detection. The HUD
+  and renderer read `phase.kind === 'cleared'` from engine state; they
+  do not scan the tiles themselves. If the reducer didn't declare clear,
+  the UI can't "helpfully" declare it — which is exactly the invariant
+  the brief asked for.
+
+Files changed this pass:
+- `src/types/index.ts` — extended `GamePhase` union with `cleared` variant.
+- `src/engine/state.ts` — added `resolvePhase(tiles)` helper; wired it into
+  the non-breach return branch of `revealTile` and into the success branch
+  of `confirmTile`; imported `GamePhase` for the helper's return type.
+- `src/ui/HUD.tsx` — added `cleared` banner, phase-value label
+  (`cleared` → "stabilized"), and a `hud-value-cleared` style hook.
+- `src/render/BoardRenderer.ts` — added stabilized palette constants,
+  extended `paintTile` to accept a `cleared` flag, suppressed hover
+  highlight in terminal phases, rendered remaining hazards in dormant cyan
+  on clear without mutating engine tile states, recolored resolved/flagged
+  tiles in the stabilized wash.
+- `src/styles.css` — added `.hud-cleared` banner and `.hud-value-cleared`
+  phase-value styles.
+
+Explicitly deferred: left+right simultaneous chord, variable-cost
+observations (peek, constraint probe, hazard bloom), replay buffer keyed
+off the action log, unit tests, any progression or metagame system, any
+post-clear summary (time-to-clear, reveals-used, confirms-completed), and
+any animated clear transition. Scope for this pass was terminal detection
+only — detection first, ceremony later.

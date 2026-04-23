@@ -1,4 +1,4 @@
-import type { BoardConfig, Coord, GameState, Tile } from '../types';
+import type { BoardConfig, Coord, GamePhase, GameState, Tile } from '../types';
 import { generateBoard, tileAt } from './board';
 
 // Pure reducer surface for the engine. UI dispatches actions, renderer reads
@@ -76,7 +76,9 @@ function revealTile(state: GameState, x: number, y: number): GameState {
   return {
     ...state,
     board: { ...state.board, tiles: nextTiles },
-    phase: detonated ? { kind: 'breached', at: { x, y } } : state.phase,
+    phase: detonated
+      ? { kind: 'breached', at: { x, y } }
+      : resolvePhase(nextTiles),
     witness: nextWitness,
   };
 }
@@ -174,8 +176,24 @@ function confirmTile(state: GameState, x: number, y: number): GameState {
   return {
     ...state,
     board: { ...state.board, tiles: nextTiles },
+    phase: resolvePhase(nextTiles),
     witness: nextWitness,
   };
+}
+
+// Clear detection. Called after any safe reveal or safe confirmation to
+// promote `active` → `cleared` when every non-hazard tile is resolved. Flags
+// are irrelevant: they are player commitments, not the truth source. Callers
+// that detect a breach must short-circuit this — breach beats clear if a
+// single action could trigger both (this function is only called on the
+// non-breach branch). Shared by `reveal` and `confirm` so the two paths cannot
+// diverge on what "cleared" means.
+function resolvePhase(tiles: ReadonlyArray<Tile>): GamePhase {
+  for (const t of tiles) {
+    if (t.isMine) continue;
+    if (t.state !== 'resolved') return { kind: 'active' };
+  }
+  return { kind: 'cleared' };
 }
 
 // Shared reveal core. Mutates `tiles` in place: reveals the tile at (x,y),

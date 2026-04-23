@@ -38,10 +38,14 @@ export interface Coord {
 }
 
 // Phase is a tagged union so each kind can carry only the data it needs.
-// Active is the ongoing observation loop; breached is terminal for the run.
+// Active is the ongoing observation loop; breached and cleared are terminal.
+// Cleared fires when every non-hazard tile is resolved — flags are irrelevant,
+// they are player commitments, not the truth source. Breach beats clear if a
+// single action could trigger both.
 export type GamePhase =
   | { readonly kind: 'active' }
-  | { readonly kind: 'breached'; readonly at: Coord };
+  | { readonly kind: 'breached'; readonly at: Coord }
+  | { readonly kind: 'cleared' };
 
 // Witness charge is the player's finite budget for direct observation.
 // `charge` is what remains; `max` is the starting capacity, preserved for HUD
