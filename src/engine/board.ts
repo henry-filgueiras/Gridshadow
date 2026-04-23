@@ -23,7 +23,7 @@ export function generateBoard(config: BoardConfig): Board {
       y: (i / width) | 0,
       isMine: mines.has(i),
       adjacentMines: 0,
-      state: 'hidden',
+      state: 'unresolved',
     };
   }
 

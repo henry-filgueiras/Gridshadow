@@ -60,15 +60,14 @@ export function GameView() {
       const r = new BoardRenderer(instance, {
         onHover: (x, y) => dispatch({ type: 'hover', x, y }),
         onHoverClear: () => dispatch({ type: 'hoverClear' }),
-        onSelect: (x, y) => dispatch({ type: 'select', x, y }),
+        onReveal: (x, y) => dispatch({ type: 'reveal', x, y }),
+        onFlag: (x, y) => dispatch({ type: 'flag', x, y }),
       });
 
       app = instance;
       renderer = r;
       rendererRef.current = r;
 
-      // Paint once immediately so the first frame reflects current state
-      // without waiting on the state-change effect.
       r.render(state);
     })();
 
@@ -89,7 +88,12 @@ export function GameView() {
 
   return (
     <div className="game-view">
-      <div ref={hostRef} className="board-host" />
+      <div
+        ref={hostRef}
+        className="board-host"
+        // Suppress the browser context menu so right-click can flag instead.
+        onContextMenu={(e) => e.preventDefault()}
+      />
       <HUD state={state} onReseed={(seed) => dispatch({ type: 'regen', seed })} />
     </div>
   );

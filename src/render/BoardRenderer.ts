@@ -1,5 +1,12 @@
-import { Application, Container, Graphics } from 'pixi.js';
-import type { Board, GameState } from '../types';
+import {
+  Application,
+  Container,
+  type FederatedPointerEvent,
+  Graphics,
+  Rectangle,
+  Text,
+} from 'pixi.js';
+import type { Board, Coord, GameState, Tile } from '../types';
 
 // Pixi v8 rendering of the board. This is a one-way consumer of engine state
 // plus a one-way emitter of pointer intent. No game rules live here.
@@ -7,24 +14,55 @@ import type { Board, GameState } from '../types';
 const TILE_SIZE = 32;
 const TILE_GAP = 2;
 
-const COLOR_TILE_IDLE = 0x1b2430;
-const COLOR_TILE_HOVER = 0x2d4056;
-const COLOR_TILE_SELECT = 0x2a7a78;
-const COLOR_STROKE_IDLE = 0x0d1218;
-const COLOR_STROKE_HOVER = 0x4a6b8a;
-const COLOR_STROKE_SELECT = 0x7effff;
+// Palette — Witness Protocol reactor feel. Unresolved tiles sit "raised"
+// (lighter) over resolved ones (recessed/darker).
+const TILE_UNRESOLVED = 0x1b2430;
+const TILE_UNRESOLVED_HOVER = 0x2d4056;
+const TILE_RESOLVED = 0x0a1118;
+const TILE_FLAGGED = 0x221a10;
+const TILE_MINE_REVEALED = 0x2a0e0e;
+const TILE_BREACH = 0x5a1a1a;
+
+const STROKE_UNRESOLVED = 0x0d1218;
+const STROKE_UNRESOLVED_HOVER = 0x4a6b8a;
+const STROKE_RESOLVED = 0x1a252f;
+const STROKE_FLAGGED = 0x6a4a1a;
+const STROKE_MINE_REVEALED = 0x6a2a2a;
+const STROKE_BREACH = 0xff4655;
+
+// Constraint-count glyph colors: cool → warm as the region's pressure rises.
+const CONSTRAINT_COLORS: readonly number[] = [
+  0x7effff, // 1 — cyan
+  0x7effa1, // 2 — mint
+  0xffdf7e, // 3 — amber
+  0xff9a7e, // 4 — coral
+  0xff7e9c, // 5 — rose
+  0xcf7eff, // 6 — violet
+  0xffffff, // 7 — white
+  0xff4655, // 8 — red
+];
+
+const COLOR_FLAG_GLYPH = 0xffcf7e;
+const COLOR_FLAG_GLYPH_WRONG = 0xff4655;
+const COLOR_MINE_GLYPH = 0xff4655;
+const COLOR_BREACH_GLYPH = 0xffe0e0;
+
+const GLYPH_FLAG = '⚑';
+const GLYPH_MINE = '●';
 
 export interface BoardRendererEvents {
   onHover(x: number, y: number): void;
   onHoverClear(): void;
-  onSelect(x: number, y: number): void;
+  onReveal(x: number, y: number): void;
+  onFlag(x: number, y: number): void;
 }
 
 export class BoardRenderer {
   private readonly app: Application;
   private readonly events: BoardRendererEvents;
   private readonly root: Container;
-  private tiles: Graphics[] = [];
+  private tileBackgrounds: Graphics[] = [];
+  private tileGlyphs: Text[] = [];
   private currentBoard: Board | null = null;
 
   constructor(app: Application, events: BoardRendererEvents) {
@@ -44,13 +82,15 @@ export class BoardRenderer {
 
   destroy(): void {
     this.root.destroy({ children: true });
-    this.tiles = [];
+    this.tileBackgrounds = [];
+    this.tileGlyphs = [];
     this.currentBoard = null;
   }
 
   private rebuildBoard(board: Board): void {
     this.root.removeChildren();
-    this.tiles = [];
+    this.tileBackgrounds = [];
+    this.tileGlyphs = [];
     const { width, height } = board.config;
 
     const pixelWidth = width * TILE_SIZE + (width - 1) * TILE_GAP;
@@ -60,45 +100,131 @@ export class BoardRenderer {
 
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
-        const g = new Graphics();
-        g.x = x * (TILE_SIZE + TILE_GAP);
-        g.y = y * (TILE_SIZE + TILE_GAP);
-        g.eventMode = 'static';
-        g.cursor = 'pointer';
+        const container = new Container();
+        container.x = x * (TILE_SIZE + TILE_GAP);
+        container.y = y * (TILE_SIZE + TILE_GAP);
+        container.eventMode = 'static';
+        container.cursor = 'pointer';
+        container.hitArea = new Rectangle(0, 0, TILE_SIZE, TILE_SIZE);
+
         const hx = x;
         const hy = y;
-        g.on('pointerover', () => this.events.onHover(hx, hy));
-        g.on('pointerout', () => this.events.onHoverClear());
-        g.on('pointerdown', () => this.events.onSelect(hx, hy));
-        this.root.addChild(g);
-        this.tiles.push(g);
+        container.on('pointerover', () => this.events.onHover(hx, hy));
+        container.on('pointerout', () => this.events.onHoverClear());
+        container.on('pointerdown', (event: FederatedPointerEvent) => {
+          // button: 0 = left, 2 = right. Middle click is ignored.
+          if (event.button === 0) this.events.onReveal(hx, hy);
+          else if (event.button === 2) this.events.onFlag(hx, hy);
+        });
+
+        const bg = new Graphics();
+        const glyph = new Text({
+          text: '',
+          style: {
+            fontFamily: 'ui-monospace, Menlo, Consolas, monospace',
+            fontSize: 16,
+            fontWeight: 'bold',
+            fill: 0xffffff,
+            align: 'center',
+          },
+        });
+        glyph.anchor.set(0.5);
+        glyph.x = TILE_SIZE / 2;
+        glyph.y = TILE_SIZE / 2;
+
+        container.addChild(bg);
+        container.addChild(glyph);
+        this.root.addChild(container);
+
+        this.tileBackgrounds.push(bg);
+        this.tileGlyphs.push(glyph);
       }
     }
   }
 
   private paint(state: GameState): void {
     const { width, height } = state.board.config;
+    const breachAt: Coord | null =
+      state.phase.kind === 'breached' ? state.phase.at : null;
+    const breached = breachAt !== null;
+
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
-        const g = this.tiles[y * width + x];
-        const isHover = state.cursor?.x === x && state.cursor?.y === y;
-        const isSelect = state.selection?.x === x && state.selection?.y === y;
-
-        let fill = COLOR_TILE_IDLE;
-        let stroke = COLOR_STROKE_IDLE;
-        if (isSelect) {
-          fill = COLOR_TILE_SELECT;
-          stroke = COLOR_STROKE_SELECT;
-        } else if (isHover) {
-          fill = COLOR_TILE_HOVER;
-          stroke = COLOR_STROKE_HOVER;
-        }
-
-        g.clear();
-        g.rect(0, 0, TILE_SIZE, TILE_SIZE);
-        g.fill(fill);
-        g.stroke({ color: stroke, width: 1, alignment: 0 });
+        const idx = y * width + x;
+        this.paintTile(state.board.tiles[idx]!, idx, state, breached, breachAt);
       }
     }
+  }
+
+  private paintTile(
+    tile: Tile,
+    idx: number,
+    state: GameState,
+    breached: boolean,
+    breachAt: Coord | null,
+  ): void {
+    const bg = this.tileBackgrounds[idx]!;
+    const glyph = this.tileGlyphs[idx]!;
+    const isHover =
+      !breached &&
+      state.cursor?.x === tile.x &&
+      state.cursor?.y === tile.y;
+    const isBreachTile =
+      breachAt !== null && breachAt.x === tile.x && breachAt.y === tile.y;
+
+    let fill = TILE_UNRESOLVED;
+    let stroke = STROKE_UNRESOLVED;
+    let text = '';
+    let color = 0xffffff;
+
+    if (tile.state === 'resolved') {
+      if (tile.isMine) {
+        // Only the detonated tile is "resolved + mine" via the engine; other
+        // revealed mines come through the breached-unresolved branch below.
+        fill = isBreachTile ? TILE_BREACH : TILE_MINE_REVEALED;
+        stroke = isBreachTile ? STROKE_BREACH : STROKE_MINE_REVEALED;
+        text = GLYPH_MINE;
+        color = isBreachTile ? COLOR_BREACH_GLYPH : COLOR_MINE_GLYPH;
+      } else {
+        fill = TILE_RESOLVED;
+        stroke = STROKE_RESOLVED;
+        if (tile.adjacentMines > 0) {
+          text = String(tile.adjacentMines);
+          const ci = Math.min(
+            tile.adjacentMines - 1,
+            CONSTRAINT_COLORS.length - 1,
+          );
+          color = CONSTRAINT_COLORS[ci]!;
+        }
+      }
+    } else if (tile.state === 'flagged') {
+      fill = TILE_FLAGGED;
+      stroke = STROKE_FLAGGED;
+      text = GLYPH_FLAG;
+      // Mis-flag on breach: keep the flag but tint it so the operator can
+      // see where their reading diverged from the field.
+      color = breached && !tile.isMine ? COLOR_FLAG_GLYPH_WRONG : COLOR_FLAG_GLYPH;
+    } else {
+      // unresolved
+      if (breached && tile.isMine) {
+        // Render-time reveal of remaining hazards on breach. Engine state
+        // remains 'unresolved' — this is purely observability.
+        fill = TILE_MINE_REVEALED;
+        stroke = STROKE_MINE_REVEALED;
+        text = GLYPH_MINE;
+        color = COLOR_MINE_GLYPH;
+      } else if (isHover) {
+        fill = TILE_UNRESOLVED_HOVER;
+        stroke = STROKE_UNRESOLVED_HOVER;
+      }
+    }
+
+    bg.clear();
+    bg.rect(0, 0, TILE_SIZE, TILE_SIZE);
+    bg.fill(fill);
+    bg.stroke({ color: stroke, width: 1, alignment: 0 });
+
+    if (glyph.text !== text) glyph.text = text;
+    if (glyph.style.fill !== color) glyph.style.fill = color;
   }
 }
