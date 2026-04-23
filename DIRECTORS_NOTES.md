@@ -85,3 +85,19 @@ before any gameplay is built.
 Deploy base path is gated on `GITHUB_PAGES=true` rather than `import.meta.env.PROD`
 so that `npm run preview` (which is PROD) still works at `/` locally. The CI
 workflow sets the env var; nothing else does.
+
+### 2026-04-23 — Claude Opus 4.7
+Fixed StrictMode × Pixi-v8-async-init bug in `GameView.tsx`. Symptom: a
+user reported a blank page on first run. Root cause: React 18 StrictMode
+double-invokes `useEffect`, so the first-run cleanup was calling
+`app.destroy(true, ...)` on an Application whose `init()` promise had not
+resolved yet. In Pixi v8, `Application.destroy()` touches `this.stage` and
+`this.renderer`, which are only populated by `init()` — so cleanup threw a
+TypeError, which React swallowed but which left the mount sequence in a
+bad state.
+
+Fix: track init completion via a local `app` variable that is only assigned
+*after* `await instance.init(...)`. If cancellation happens mid-init, the
+async path itself tears down the instance once init resolves. Cleanup only
+destroys when `app` is non-null. Also paint once immediately on first
+successful init so the first frame doesn't wait on the state-effect tick.

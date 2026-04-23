@@ -25,41 +25,62 @@ export function GameView() {
     const host = hostRef.current;
     if (!host) return;
 
-    let disposed = false;
-    const app = new Application();
+    // Pixi v8 init is async. StrictMode double-invokes this effect, so the
+    // first cleanup can fire *before* the first init resolves. We must not
+    // call Application.destroy() on an uninitialized app (it touches fields
+    // populated only by init()). Track whether init completed and only
+    // destroy then; if cancellation lands mid-init, tear down inside the
+    // async path once init resolves.
+    let cancelled = false;
+    let app: Application | null = null;
+    let renderer: BoardRenderer | null = null;
 
-    app
-      .init({
-        resizeTo: host,
-        background: '#060b10',
-        antialias: true,
-        autoDensity: true,
-        resolution: window.devicePixelRatio || 1,
-      })
-      .then(() => {
-        if (disposed) {
-          app.destroy(true, { children: true });
-          return;
-        }
-        host.appendChild(app.canvas);
-        const renderer = new BoardRenderer(app, {
-          onHover: (x, y) => dispatch({ type: 'hover', x, y }),
-          onHoverClear: () => dispatch({ type: 'hoverClear' }),
-          onSelect: (x, y) => dispatch({ type: 'select', x, y }),
+    (async () => {
+      const instance = new Application();
+      try {
+        await instance.init({
+          resizeTo: host,
+          background: '#060b10',
+          antialias: true,
+          autoDensity: true,
+          resolution: window.devicePixelRatio || 1,
         });
-        rendererRef.current = renderer;
-      })
-      .catch((err) => {
+      } catch (err) {
         // eslint-disable-next-line no-console
         console.error('pixi init failed', err);
+        return;
+      }
+
+      if (cancelled) {
+        instance.destroy(true, { children: true });
+        return;
+      }
+
+      host.appendChild(instance.canvas);
+      const r = new BoardRenderer(instance, {
+        onHover: (x, y) => dispatch({ type: 'hover', x, y }),
+        onHoverClear: () => dispatch({ type: 'hoverClear' }),
+        onSelect: (x, y) => dispatch({ type: 'select', x, y }),
       });
 
+      app = instance;
+      renderer = r;
+      rendererRef.current = r;
+
+      // Paint once immediately so the first frame reflects current state
+      // without waiting on the state-change effect.
+      r.render(state);
+    })();
+
     return () => {
-      disposed = true;
-      rendererRef.current?.destroy();
+      cancelled = true;
+      renderer?.destroy();
+      renderer = null;
+      app?.destroy(true, { children: true });
+      app = null;
       rendererRef.current = null;
-      app.destroy(true, { children: true });
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
