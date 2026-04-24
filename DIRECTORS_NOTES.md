@@ -11,24 +11,28 @@ archive with a new dated entry that supersedes it.
 ## Current Canon
 
 ### Stage
-Reveal / flag / breach / clear loop under a finite **witness charge** budget,
-with **Witness Confirmation** (chord) for inference-rewarded claims, the
-**Witness Probe** (line scan) as the first structural-scan instrument,
-a bounded **probe history** ledger that preserves recent readings, and
-**contradiction highlighting** — a proof-only truth layer that marks any
-resolved numbered tile whose local flag/unresolved counts make its
-constraint impossible to satisfy. Tiles are `unresolved | resolved |
-flagged`, the run phase is `active | breached | cleared`, the player has
-a finite pool of direct observations, they can ask *about a region* rather
-than a tile, they can look back at the last several such questions without
-a paper notebook, and the field now visibly refuses to host impossibilities.
-The core identity pivot — "spend certainty to make claims *or* to ask a
-better question, and the field tells you when your reading cannot be
-true" — is expressed end-to-end in the rules. Next substantive foundation
-decisions: a deterministic replay buffer keyed off the action log, a
-headless test harness, and the second probe geometry (row/column signature
-or rectangular scan) once we have one structural instrument in players'
-hands to calibrate against. Still foundation work — not progression,
+Reveal / flag / breach / clear loop under a finite **witness charge** budget
+on a 24×24 / 99-hazard default field, with **Witness Confirmation** (chord)
+for inference-rewarded claims, the **Witness Probe** (line scan) as the
+first structural-scan instrument, a bounded **probe history** ledger that
+preserves recent readings, **contradiction highlighting** — a proof-only
+truth layer that marks any resolved numbered tile whose local
+flag/unresolved counts make its constraint impossible to satisfy — and
+**Protected Constraints v1** as a live experiment: a deterministic ~12%
+fraction of safe numbered tiles reveal as "safe, but value sealed" and
+require 1 witness charge to unveil the constraint number. Tiles are
+`unresolved | resolved | flagged`, the run phase is `active | breached |
+cleared`, the player has a finite pool of direct observations, they can
+ask *about a region* rather than a tile, they can look back at the last
+several such questions without a paper notebook, the field visibly refuses
+to host impossibilities, and some tiles require an additional payment to
+reveal their constraint after being proved safe. The identity loop now
+includes "interpretation costs authority" — safety and legibility are
+separable purchases. Next substantive foundation decisions: evaluating
+whether hidden-value pressure changes the inference/payment ratio enough
+to become canon, a deterministic replay buffer keyed off the action log,
+a headless test harness, and the second probe geometry (row/column
+signature or rectangular scan). Still foundation work — not progression,
 metagame, or content.
 
 ### Stack
@@ -66,13 +70,24 @@ excavation bill.
   phase with `witness.charge = witness.max = config.witnessCharges`,
   `witness.confirms = 0`, and `probeHistory = []`.
 * `reduceGame(state, action): GameState` where action is one of
-  `hover | hoverClear | reveal | flag | confirm | probe | regen`. Pure.
+  `hover | hoverClear | reveal | flag | confirm | probe | unveil | regen`.
+  Pure.
 * `generateBoard(config)`: deterministic from
   `{width, height, mineCount, seed}`. `witnessCharges` is a gameplay-budget
   input that does not affect board generation — the board is the same under
-  any charge count for a given seed.
+  any charge count for a given seed. After mines and adjacency counts are
+  computed, the same rng stream deterministically selects
+  `floor(PROTECTED_TUNABLES.fraction × eligible)` safe numbered tiles as
+  *protected* (value starts occluded) via Fisher-Yates shuffle of eligible
+  indices. Eligibility: non-mine AND `adjacentMines > 0`. Same seed → same
+  mines → same protected set, forever.
 * `tallyTiles(state): TileTally` — pure derivation of
   unresolved / resolved / flagged counts, for HUD and future observers.
+* `protectedTally(state): ProtectedTally` — pure derivation of
+  `{ total, occluded, unveiled }` where `occluded` is the count of
+  resolved, protected, not-yet-unveiled tiles — the actionable number for
+  HUD planning. `total` is the board-intrinsic protected count (stable
+  across actions); `unveiled` tracks how many the operator has paid for.
 * `witnessStatus(state): 'steady' | 'low' | 'exhausted'` — thresholded
   selector used by the HUD so urgency thresholds live in one place. Low is
   charge ≤ 3 OR charge ≤ 25% of max (absolute floor beats ratio as max
@@ -93,11 +108,13 @@ excavation bill.
   `revealAt(tiles, w, h, x, y)` helper shared by `reveal` and `confirm` so
   the two paths can't diverge.
 * **Witness charge**: a finite integer budget in `GameState.witness`. Each
-  effectful direct reveal consumes 1 charge; cascade expansion, flagging,
-  confirmation, and denied actions are free. When charge reaches 0, `reveal`
-  becomes a no-op; `confirm` remains available — the game continues through
-  inference and claim-making. No passive regen, no shops, no batteries.
-  Default budget: 12 charges on a 16×16, 40-hazard field.
+  effectful direct reveal consumes 1 charge; an `unveil` (pay to reveal a
+  protected tile's number) also consumes 1 charge; cascade expansion,
+  flagging, confirmation, and denied actions are free. When charge reaches
+  0, `reveal` and `unveil` become no-ops; `confirm` remains available —
+  the game continues through inference and claim-making. No passive regen,
+  no shops, no batteries. Default budget: 18 charges on a 24×24, 99-hazard
+  field.
 * **Witness Confirmation (chord)**: `confirm` targets a resolved numbered
   tile. If the count of adjacent flags equals `tile.adjacentMines` AND at
   least one adjacent unresolved, unflagged neighbor exists, every such
@@ -141,23 +158,43 @@ excavation bill.
   (under-space). Truth only — no probability, no "recommended move", no
   auto-fix, no multi-tile SAT-style inference. Suppressed in terminal
   phases: breached fields already highlight mis-flags; cleared fields
-  cannot carry a contradiction by construction (every safe tile is
-  resolved, so every remaining flag is necessarily a hazard). The
-  selector is the single authority — HUD count and renderer halos both
-  consume its output, neither recomputes.
+  cannot carry a contradiction by construction. Also suppresses
+  protected-but-not-unveiled tiles — surfacing a halo against a hidden
+  constraint would leak the constraint by reverse-inference, defeating
+  the unveil purchase. The selector is the single authority — HUD count
+  and renderer halos both consume its output, neither recomputes.
+* **Protected Constraints v1 (experimental)**: a deterministic subset of
+  safe numbered tiles (default ~12%) are marked `protected` at board-
+  generation time. When such a tile is revealed — directly or by
+  cascade — it becomes `resolved` but its constraint number remains
+  *occluded* until the operator spends 1 witness charge via the
+  `unveil` action. Reveal buys safety; unveil buys legibility. Tunables
+  (`PROTECTED_TUNABLES.fraction | unveilCost`) live at `src/engine/board.ts`
+  file scope and are re-exported so HUD copy reads from the same source
+  as the reducer. Confirm is gated on visible value — a chord against
+  an occluded tile is refused so the number cannot leak via the chord's
+  outcome. This layer is explicitly an experiment, not final canon, and
+  may be tuned or retracted based on play feel before promoting.
 * First-click safety is intentionally NOT implemented: the seed fully
   determines the board, so the first reveal can legitimately detonate.
   The player learning to read the field is the game.
 
 ### What the visual proof does
-16×16 interactive grid with the full reveal / flag / confirm / probe loop
-under a witness budget:
+24×24 interactive grid (99 hazards default) with the full reveal / flag /
+confirm / probe / unveil loop under a witness budget:
 * left-click on an unresolved tile resolves it and spends 1 witness charge;
   zero-adjacency regions flood-reveal for free; reveals with zero charge
   are refused
+* left-click on a resolved, protected, not-yet-unveiled tile dispatches
+  `unveil` — the engine validates tile state and charge, then flips
+  `valueRevealed` and deducts 1 charge, making the constraint number
+  visible; probe mode does *not* preempt unveil (probe refuses resolved
+  targets anyway, and forcing a disarm to unveil would be mode sludge)
 * left-click on a resolved numbered tile *or* middle-click anywhere
   dispatches `confirm` — the engine validates the flag-match condition and
-  reveals the remaining unflagged neighbors as a group
+  reveals the remaining unflagged neighbors as a group; confirm on an
+  occluded tile is refused (the hidden number cannot leak via chord
+  outcomes)
 * right-click toggles a flag — always free
 * `h` arms a horizontal probe, `v` arms a vertical probe, pressing either
   again (or `Esc`) disarms; while armed, the hovered 5-cell segment is
@@ -185,9 +222,14 @@ under a witness budget:
   dedicated Pixi layer above the tile grid; the HUD surfaces the same
   count (pulsing red when nonzero), both driven by the single
   `detectContradictions` engine selector
+* resolved-but-protected safe tiles paint with a distinct cooler fill,
+  a muted-cyan stroke, four inset corner brackets (the "seal" border),
+  and a sigil glyph (◈) where the number would otherwise sit; after
+  unveil, the tile swaps to the normal numbered-tile palette
 * HUD shows witness charge with a meter and tiered coloring
   (steady → low at ≤25% or ≤3 remaining → exhausted at 0), confirmation
-  count, contradiction count (pulsing red when nonzero), seed, field
+  count, contradiction count (pulsing red when nonzero), occluded
+  count (cyan when nonzero — tiles still needing an unveil), seed, field
   dims, hazard count, tile tallies, cursor, phase (`active | breached |
   stabilized`), and a breach or stabilization banner as applicable
   (the stabilization banner reads "field stabilized · witness protocol
@@ -1191,3 +1233,212 @@ metagame system. The brief continues to forbid shops, batteries,
 passive regen, inventory, backend, multiplayer, and campaign systems
 — still no cathedral. The player now has a truth serum. They do not
 yet have an oracle, and will not get one.
+
+### 2026-04-24 — Claude Opus 4.7 (Protected Constraints v1 — interpretation costs authority)
+First experimental layer. The prior passes established *safety* as the
+thing witness charge buys; this pass introduces a second axis —
+*legibility*. A deterministic ~12% fraction of safe numbered tiles now
+resolves as "safe, value occluded", and the operator pays 1 charge per
+tile to read the constraint number. The brief's framing was precise:
+this is an experiment, not final canon, testing whether players
+naturally infer around hidden truths or always pay immediately. The
+field also grew from 16×16/40 to 24×24/99 so that hidden-value pressure
+has more real ambiguity to bite on, with the starting budget tightened
+from 12 → 18 charges (less than proportional, by design). Demoted five
+Canon sections: Stage, three Engine-surface bullets (reduceGame,
+generateBoard, witness-charge default), and two Visual-proof bullets
+(opening line + HUD enumeration + left-click behavior). Verbatim:
+
+**Superseded — Stage:**
+> Reveal / flag / breach / clear loop under a finite **witness charge** budget,
+> with **Witness Confirmation** (chord) for inference-rewarded claims, the
+> **Witness Probe** (line scan) as the first structural-scan instrument,
+> a bounded **probe history** ledger that preserves recent readings, and
+> **contradiction highlighting** — a proof-only truth layer that marks any
+> resolved numbered tile whose local flag/unresolved counts make its
+> constraint impossible to satisfy. Tiles are `unresolved | resolved |
+> flagged`, the run phase is `active | breached | cleared`, the player has
+> a finite pool of direct observations, they can ask *about a region* rather
+> than a tile, they can look back at the last several such questions without
+> a paper notebook, and the field now visibly refuses to host impossibilities.
+> The core identity pivot — "spend certainty to make claims *or* to ask a
+> better question, and the field tells you when your reading cannot be
+> true" — is expressed end-to-end in the rules. Next substantive foundation
+> decisions: a deterministic replay buffer keyed off the action log, a
+> headless test harness, and the second probe geometry (row/column signature
+> or rectangular scan) once we have one structural instrument in players'
+> hands to calibrate against. Still foundation work — not progression,
+> metagame, or content.
+
+**Superseded — Engine surface (reducer action list):**
+> * `reduceGame(state, action): GameState` where action is one of
+>   `hover | hoverClear | reveal | flag | confirm | probe | regen`. Pure.
+
+**Superseded — Engine surface (generateBoard):**
+> * `generateBoard(config)`: deterministic from
+>   `{width, height, mineCount, seed}`. `witnessCharges` is a gameplay-budget
+>   input that does not affect board generation — the board is the same under
+>   any charge count for a given seed.
+
+**Superseded — Engine surface (witness charge default):**
+> * **Witness charge**: a finite integer budget in `GameState.witness`. Each
+>   effectful direct reveal consumes 1 charge; cascade expansion, flagging,
+>   confirmation, and denied actions are free. When charge reaches 0, `reveal`
+>   becomes a no-op; `confirm` remains available — the game continues through
+>   inference and claim-making. No passive regen, no shops, no batteries.
+>   Default budget: 12 charges on a 16×16, 40-hazard field.
+
+**Superseded — Visual proof (grid header + two left-click bullets):**
+> 16×16 interactive grid with the full reveal / flag / confirm / probe loop
+> under a witness budget:
+> * left-click on an unresolved tile resolves it and spends 1 witness charge;
+>   zero-adjacency regions flood-reveal for free; reveals with zero charge
+>   are refused
+> * left-click on a resolved numbered tile *or* middle-click anywhere
+>   dispatches `confirm` — the engine validates the flag-match condition and
+>   reveals the remaining unflagged neighbors as a group
+
+**Superseded — Visual proof (HUD enumeration):**
+> * HUD shows witness charge with a meter and tiered coloring
+>   (steady → low at ≤25% or ≤3 remaining → exhausted at 0), confirmation
+>   count, contradiction count (pulsing red when nonzero), seed, field
+>   dims, hazard count, tile tallies, cursor, phase (`active | breached |
+>   stabilized`), and a breach or stabilization banner as applicable
+>   (the stabilization banner reads "field stabilized · witness protocol
+>   complete")
+
+Design notes for this pass:
+- **Protection is a board-intrinsic property, not play state.** `Tile.protected`
+  is set by `generateBoard` and never mutates through the reducer; only
+  `valueRevealed` flips under play. This split matters because the
+  experiment's whole premise is "same seed → same sealed layout, every
+  run." If protection were mutable (say, by a reveal heuristic, or a
+  runtime difficulty dial), the seed would no longer pin the board and
+  the reproducibility contract — load-bearing for replay, multiplayer,
+  and the headless harness — would bend.
+- **Selection is the same rng stream as mine placement.** Fisher-Yates
+  shuffle of eligible safe-numbered indices, take the first K where
+  `K = floor(eligibleCount × PROTECTED_FRACTION)`. Same seed → same
+  mines → same shuffle → same protected set, forever. Fisher-Yates in
+  preference to per-tile Bernoulli trials because exact-K selection
+  makes the occluded count stable across seeds at the same config
+  (predictable pressure profile) rather than binomially drifting.
+- **Zero-adjacency tiles are ineligible.** A zero has no constraint to
+  purchase — unveiling it would say "there are 0 mines around this
+  tile", which the operator can already infer the moment it's revealed
+  (cascades still fire normally). Excluding zeros also keeps cascade
+  semantics trivially clean: a cascade reveals numbered borders,
+  protected or not, but never has to decide whether to occlude a "0"
+  (it never does). Mines are ineligible for the obvious reason.
+- **Cascade does not auto-unveil.** A zero-flood resolves protected
+  tiles on its border, but `valueRevealed` stays false for each of
+  them. This is the strongest expression of the experiment's identity:
+  the cascade bought the safety for free as always, but it did *not*
+  buy the legibility. A player who wants to read the cascade's
+  numbered border now pays per tile. This ratchets up the pressure
+  exactly where the old design was slackest.
+- **Interaction: left-click on a resolved, protected, not-yet-unveiled
+  tile → `unveil`.** One state → one gesture. Considered alternatives
+  and rejected them in order:
+  (a) Modifier + click (Shift+click): invisibly rewires a gesture
+      that might later carry multi-select semantics; and players who
+      miss the modifier face a silent no-op.
+  (b) Dedicated armed mode (press `u`, then click): exactly the
+      "mode sludge" the brief warned against. Two modes (probe +
+      unveil) would compete for mental real estate.
+  (c) Middle-click on occluded: middle-click is already "ritual
+      confirm"; overloading it with a divergent action based on
+      tile type would break the single-meaning-per-gesture rule.
+  Left-click-routes-by-tile-state is the pattern already in use
+  (left-click on resolved numbered → confirm; left-click on
+  unresolved → reveal/probe). Adding "left-click on occluded →
+  unveil" is consistent with that pattern, not an extension of it.
+- **Probe mode does *not* preempt unveil.** An armed probe refuses
+  resolved targets anyway (probe needs an unresolved center), so
+  nothing is lost by letting left-click on an occluded tile go
+  through as an unveil while probe is armed. Preempting would force
+  the operator to disarm probe just to pay for a number, and that is
+  the exact mode-sludge flavor the brief called out. Single rule: if
+  the tile is occluded, left-click unveils, full stop.
+- **Confirm refuses occluded tiles.** Without this guard, chord
+  outcomes would leak the hidden number by inference — a safe chord
+  means "flag count matched", a detonation means "flag count was too
+  high", and the sign of the leak is exactly the information the
+  unveil purchase is supposed to gate. Refusing at the reducer is
+  cheaper than trying to simulate a "hidden chord outcome" visual.
+- **Contradictions suppress on occluded tiles.** Same reasoning, same
+  vector. A halo that lights up only when `adjacentFlags` exceeds a
+  hidden threshold, or only when unresolved count falls below a
+  hidden threshold, would let a patient operator binary-search the
+  number with a single flag. The selector skips these tiles entirely;
+  once unveiled, they rejoin the contradiction pool naturally.
+- **Visual: distinct fill, muted-cyan stroke, four inset corner
+  brackets, ◈ sigil.** Four separate identification channels because
+  the brief was explicit — *never surprise tax*, the operator must
+  know before spending the unveil charge that this tile is asking
+  for one. The sigil alone wasn't enough (at fast pan it can scan as
+  a number glyph if the resolution is low), and the stroke alone
+  wasn't enough (stroke colors cluster at a glance). The "seal"
+  corner brackets are static — no pulse, no shimmer. Protected
+  tiles are board state, not a live warning; a pulsing halo would
+  have falsely read as "urgent to unveil" when in fact the operator
+  may deliberately decide *not* to unveil for the whole run.
+- **Board size & budget.** Jumped to 24×24 / 99 hazards (~17%
+  density) from 16×16 / 40 (~15.6%), with the witness budget moved
+  from 12 → 18 — less than proportional. Reasoning: the old baseline
+  left most runs with leftover charge at clear, which made "spend
+  certainty to make claims" less load-bearing than intended. With
+  more field to read *and* a meaningful fraction of it arriving
+  occluded, charge budget pressure moves from "a nice-to-have
+  worry" to "the central question of the run", which is exactly
+  what the experiment needs to measure against.
+- **`protectedTally` is a selector, not stored.** Same pattern as
+  `tallyTiles` and `detectContradictions`. O(tiles) per call is
+  negligible at 576; keeping it derived means the HUD's `occluded`
+  count cannot drift from the board's actual occluded state, no
+  matter what sequence of actions produced the current snapshot.
+
+Files changed this pass:
+- `src/types/index.ts` — added `protected` and `valueRevealed` fields
+  to `Tile`, with commentary explaining the invariants.
+- `src/engine/board.ts` — added `PROTECTED_TUNABLES`; extended
+  `generateBoard` to initialize new tile fields and run a Fisher-Yates
+  selection of protected indices from the same rng stream; exported
+  the tunables from the engine barrel.
+- `src/engine/state.ts` — added `unveil` action variant and
+  `unveilTile` reducer (charge guard, tile-state guard, pure
+  transition); gated `confirmTile` on visible value to close the
+  chord-leak vector.
+- `src/engine/contradiction.ts` — added occluded-tile skip so halos
+  cannot leak the hidden number by reverse-inference.
+- `src/engine/selectors.ts` — added `protectedTally` with
+  `{ total, occluded, unveiled }` derivation.
+- `src/engine/index.ts` — re-exported `PROTECTED_TUNABLES`,
+  `protectedTally`, and `ProtectedTally`.
+- `src/render/BoardRenderer.ts` — added occluded palette
+  (fill/stroke/glyph/accent); routed left-click on occluded to a new
+  `onUnveil` event; drew the "seal" corner-bracket border on
+  occluded tiles; preserved the probe-preview and contradiction-halo
+  stacking order above the occluded visuals.
+- `src/ui/GameView.tsx` — bumped `INITIAL_CONFIG` to 24×24/99/18;
+  wired `onUnveil` through to `dispatch({ type: 'unveil' })` (no
+  probe-mode preemption); memoized `protectedTally`; passed
+  `occludedCount` to the HUD.
+- `src/ui/HUD.tsx` — imported `PROTECTED_TUNABLES`; added
+  `occludedCount` prop; rendered an `occluded` row styled
+  `hud-value-occluded` when nonzero; added a hint line explaining
+  the seal sigil and its cost.
+- `src/styles.css` — added `.hud-value-occluded` (static muted cyan;
+  not pulsing — protected state is not a live warning).
+
+Explicitly deferred: topology-aware protected placement (e.g.,
+forbidding two protected tiles from touching, or biasing toward
+choke-points / cascade borders), per-tile variable unveil cost, a
+"peek" at an occluded constraint without fully buying it, an audit
+or telemetry surface for hidden-value play patterns, a breach-save
+mechanic, a forced-guess protocol, loadouts / build variants, any
+progression or metagame system, multiplayer, and any backend. The
+brief continues to forbid shops, batteries, passive regen, inventory,
+campaign systems — still no cathedral. This is an experiment. The
+open question the pass is asking: when truth resists observation,
+does the game get better?

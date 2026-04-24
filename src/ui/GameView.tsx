@@ -1,16 +1,27 @@
 import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { Application } from 'pixi.js';
-import { createGameState, detectContradictions, reduceGame } from '../engine';
+import {
+  createGameState,
+  detectContradictions,
+  protectedTally,
+  reduceGame,
+} from '../engine';
 import { BoardRenderer } from '../render';
 import type { BoardConfig, Coord, ProbeOrientation } from '../types';
 import { HUD } from './HUD';
 
+// Protected Constraints v1 experiment: bumped the default field to 24×24
+// with 99 hazards (~17% density) so there's enough ambiguity for the
+// occlusion mechanic to bite, and pulled the starting witness budget to 18
+// — tighter-than-proportional pressure relative to the old 16×16/40/12
+// baseline, because the experiment is specifically about whether the
+// player prefers to infer around hidden truths or pay to see them.
 const INITIAL_CONFIG: BoardConfig = {
-  width: 16,
-  height: 16,
-  mineCount: 40,
+  width: 24,
+  height: 24,
+  mineCount: 99,
   seed: 1,
-  witnessCharges: 12,
+  witnessCharges: 18,
 };
 
 export function GameView() {
@@ -68,6 +79,11 @@ export function GameView() {
     for (const c of contradictions) s.add(c.at.y * w + c.at.x);
     return s;
   }, [contradictions, state.board.config.width]);
+
+  // Protected Constraints v1 tally — surfaces the actionable "occluded"
+  // count to the HUD. Memo keyed on state so flag/reveal/unveil changes
+  // invalidate but hover/cursor do not.
+  const protected_ = useMemo(() => protectedTally(state), [state]);
 
   // Probe mode auto-exits on terminal phase so the HUD indicator can't
   // persist past a run ending. Reseed enters active again with probe mode
@@ -155,6 +171,13 @@ export function GameView() {
         // mode: the mode only rewires left-click, because confirming a
         // resolved numbered tile is a different instrument than probing.
         onConfirm: (x, y) => dispatch({ type: 'confirm', x, y }),
+        // Protected Constraints v1: left-click on a resolved, protected,
+        // not-yet-unveiled tile routes here. Probe mode does *not*
+        // preempt — each tile state has its own click routing, and an
+        // armed probe refuses resolved targets anyway. If we preempted,
+        // an operator staying in probe mode would be unable to unveil
+        // without disarming every single time.
+        onUnveil: (x, y) => dispatch({ type: 'unveil', x, y }),
       });
 
       app = instance;
@@ -201,6 +224,7 @@ export function GameView() {
         hoveredHistoryIndex={hoveredHistoryIndex}
         onHistoryHover={setHoveredHistoryIndex}
         contradictionCount={contradictions.length}
+        occludedCount={protected_.occluded}
         onReseed={(seed) => dispatch({ type: 'regen', seed })}
       />
     </div>

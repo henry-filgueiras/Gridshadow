@@ -52,6 +52,13 @@ export function detectContradictions(
     // no number to anchor on — a better read of the contradiction is
     // carried by whichever adjacent numbered tile is over-flagged. Skip.
     if (tile.adjacentMines === 0) continue;
+    // Protected Constraints v1: occluded tiles are deliberately hiding
+    // their constraint from the operator. Surfacing a halo against a
+    // hidden number would leak the number (the operator could bisect the
+    // true value by flag-placement trial). The halo is "proof the
+    // operator can read"; until they pay to unveil, there is no proof
+    // for them here.
+    if (tile.protected && !tile.valueRevealed) continue;
 
     let flags = 0;
     let unresolved = 0;

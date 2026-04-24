@@ -1,5 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { PROBE_TUNABLES, tallyTiles, witnessStatus } from '../engine';
+import {
+  PROBE_TUNABLES,
+  PROTECTED_TUNABLES,
+  tallyTiles,
+  witnessStatus,
+} from '../engine';
 import type { GameState, ProbeOrientation } from '../types';
 
 interface HUDProps {
@@ -13,6 +18,13 @@ interface HUDProps {
   // the revealed field; a positive count means that many resolved numbered
   // tiles carry a halo on the board.
   contradictionCount: number;
+  // Protected Constraints v1: count of resolved, protected, not-yet-
+  // unveiled tiles — the actionable number for the operator (each one
+  // costs `PROTECTED_TUNABLES.unveilCost` charge to read). Surfaced in
+  // the HUD so the player can plan their charge spend against both
+  // unexplored field and occluded constraints without scanning the
+  // board.
+  occludedCount: number;
   onReseed: (seed: number) => void;
 }
 
@@ -29,6 +41,7 @@ export function HUD({
   hoveredHistoryIndex,
   onHistoryHover,
   contradictionCount,
+  occludedCount,
   onReseed,
 }: HUDProps) {
   const { config } = state.board;
@@ -229,6 +242,16 @@ export function HUD({
             {contradictionCount}
           </span>
         </div>
+        <div className="hud-row">
+          <span className="hud-label">occluded</span>
+          <span
+            className={`hud-value ${
+              occludedCount > 0 ? 'hud-value-occluded' : ''
+            }`}
+          >
+            {occludedCount}
+          </span>
+        </div>
       </div>
 
       <div className="hud-divider" />
@@ -267,6 +290,10 @@ export function HUD({
         </div>
         <div>esc — disarm probe</div>
         <div>red halo — local constraint proven impossible</div>
+        <div>
+          sealed tile (◈) — safe but value hidden; click to unveil (costs{' '}
+          {PROTECTED_TUNABLES.unveilCost} charge)
+        </div>
       </div>
 
       <button

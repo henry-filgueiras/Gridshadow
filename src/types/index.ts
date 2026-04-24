@@ -15,6 +15,16 @@ export interface Tile {
   // Number of adjacent hazards. Intrinsic to the board, not to play state.
   readonly adjacentMines: number;
   readonly state: TileState;
+  // Protected Constraints v1 (experiment): a board-intrinsic flag marking a
+  // safe numbered tile whose adjacency count starts *occluded* after reveal.
+  // Mines and zero-adjacency tiles are never protected — a zero has no
+  // constraint value worth hiding, and hiding a mine's "isMine" would break
+  // the safety invariant this whole mechanic is built on.
+  readonly protected: boolean;
+  // Play-state, mutated only by the `unveil` reducer action: true once the
+  // player has paid to reveal this tile's constraint number. Meaningless
+  // when `protected === false` (always read as unveiled by UI).
+  readonly valueRevealed: boolean;
 }
 
 export interface BoardConfig {

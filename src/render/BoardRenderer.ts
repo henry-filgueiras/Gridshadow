@@ -29,6 +29,13 @@ const TILE_BREACH = 0x5a1a1a;
 const TILE_MINE_STABILIZED = 0x0f1a22;
 const TILE_RESOLVED_STABILIZED = 0x0e1a22;
 const TILE_FLAGGED_STABILIZED = 0x12202a;
+// Protected Constraints v1 — occluded safe tiles. Distinct from regular
+// resolved (so the operator can see they need to pay to read the value)
+// without bleeding into the probe-preview register (which is inset cyan).
+// Palette: slightly cooler fill than resolved, a muted-cyan stroke, and
+// a sealed sigil glyph where the number would otherwise sit.
+const TILE_PROTECTED = 0x0d1c22;
+const TILE_PROTECTED_STABILIZED = 0x0f2028;
 
 const STROKE_UNRESOLVED = 0x0d1218;
 const STROKE_UNRESOLVED_HOVER = 0x4a6b8a;
@@ -37,6 +44,12 @@ const STROKE_FLAGGED = 0x6a4a1a;
 const STROKE_MINE_REVEALED = 0x6a2a2a;
 const STROKE_BREACH = 0xff4655;
 const STROKE_STABILIZED = 0x2a5a6a;
+const STROKE_PROTECTED = 0x2d5a68;
+// Inset accent on occluded tiles — the "seal" border that tells the
+// operator this tile withholds its number. Quieter than the probe preview
+// on purpose: probe is a live instrument overlay, protected is static
+// board state.
+const COLOR_PROTECTED_ACCENT = 0x3a7e8a;
 
 // Constraint-count glyph colors: cool → warm as the region's pressure rises.
 const CONSTRAINT_COLORS: readonly number[] = [
@@ -54,6 +67,11 @@ const COLOR_FLAG_GLYPH = 0xffcf7e;
 const COLOR_FLAG_GLYPH_WRONG = 0xff4655;
 const COLOR_MINE_GLYPH = 0xff4655;
 const COLOR_BREACH_GLYPH = 0xffe0e0;
+// Occluded constraint sigil. Cool, muted — reads as "sealed" rather than
+// "interactive". After unveil, the tile swaps to the normal constraint
+// palette and this glyph is never shown.
+const COLOR_PROTECTED_GLYPH = 0x6fa8b5;
+const COLOR_PROTECTED_GLYPH_STABILIZED = 0x4a8892;
 // Cleared-phase glyph colors — hazards become dormant sentinels, correctly
 // flagged tiles read as corroborated, safe tiles keep their constraint
 // colors (they already tell the truth).
@@ -78,6 +96,10 @@ const CONTRADICTION_ALPHA_MAX = 1.0;
 
 const GLYPH_FLAG = '⚑';
 const GLYPH_MINE = '●';
+// Diamond-in-diamond: reads as a sealed container without collapsing into
+// any existing register (flag/mine/number). Widely supported across
+// platform fonts.
+const GLYPH_PROTECTED = '◈';
 
 export interface BoardRendererEvents {
   onHover(x: number, y: number): void;
@@ -85,6 +107,13 @@ export interface BoardRendererEvents {
   onReveal(x: number, y: number): void;
   onFlag(x: number, y: number): void;
   onConfirm(x: number, y: number): void;
+  // Protected Constraints v1: emitted when the operator left-clicks a
+  // resolved, protected, not-yet-unveiled tile. The engine handles the
+  // charge deduction and the `valueRevealed` flip; the renderer just
+  // routes the intent based on tile state. GameView may choose to
+  // re-route this to a different action (e.g., while probe mode is
+  // armed) — input *policy* belongs above the renderer.
+  onUnveil(x: number, y: number): void;
 }
 
 // Per-frame UI-layer overlay: state the renderer should *paint* but that
@@ -223,12 +252,28 @@ export class BoardRenderer {
             return;
           }
           if (event.button !== 0) return;
-          const tile = this.currentBoard?.tiles[hy * this.currentBoard.config.width + hx];
-          if (tile && tile.state === 'resolved' && !tile.isMine && tile.adjacentMines > 0) {
-            this.events.onConfirm(hx, hy);
-          } else {
-            this.events.onReveal(hx, hy);
+          const tile =
+            this.currentBoard?.tiles[hy * this.currentBoard.config.width + hx];
+          if (tile && tile.state === 'resolved' && !tile.isMine) {
+            // Protected-occluded: left-click buys the number (engine
+            // validates charge and state). A protected tile after
+            // unveiling behaves like any other numbered tile — falls
+            // through to the confirm branch below.
+            if (tile.protected && !tile.valueRevealed) {
+              this.events.onUnveil(hx, hy);
+              return;
+            }
+            if (tile.adjacentMines > 0) {
+              this.events.onConfirm(hx, hy);
+              return;
+            }
+            // Zero-adjacency resolved: nothing actionable. Fall through
+            // to onReveal so probe mode (which routes through
+            // `onReveal`) still has a chance to fire on resolved
+            // zero-cells — the engine will refuse, but routing stays
+            // predictable.
           }
+          this.events.onReveal(hx, hy);
         });
 
         const bg = new Graphics();
@@ -343,6 +388,12 @@ export class BoardRenderer {
     let text = '';
     let color = 0xffffff;
 
+    const isOccluded =
+      tile.state === 'resolved' &&
+      !tile.isMine &&
+      tile.protected &&
+      !tile.valueRevealed;
+
     if (tile.state === 'resolved') {
       if (tile.isMine) {
         // Only the detonated tile is "resolved + mine" via the engine; other
@@ -351,6 +402,18 @@ export class BoardRenderer {
         stroke = isBreachTile ? STROKE_BREACH : STROKE_MINE_REVEALED;
         text = GLYPH_MINE;
         color = isBreachTile ? COLOR_BREACH_GLYPH : COLOR_MINE_GLYPH;
+      } else if (isOccluded) {
+        // Occluded safe tile — the operator knows this is safe but has
+        // not paid to read its constraint. Distinct fill + stroke +
+        // sigil glyph, quiet enough to avoid competing with number
+        // tiles for attention, distinct enough that the pay-to-read
+        // affordance is unmissable.
+        fill = cleared ? TILE_PROTECTED_STABILIZED : TILE_PROTECTED;
+        stroke = cleared ? STROKE_STABILIZED : STROKE_PROTECTED;
+        text = GLYPH_PROTECTED;
+        color = cleared
+          ? COLOR_PROTECTED_GLYPH_STABILIZED
+          : COLOR_PROTECTED_GLYPH;
       } else {
         fill = cleared ? TILE_RESOLVED_STABILIZED : TILE_RESOLVED;
         stroke = cleared ? STROKE_STABILIZED : STROKE_RESOLVED;
@@ -399,6 +462,35 @@ export class BoardRenderer {
     bg.rect(0, 0, TILE_SIZE, TILE_SIZE);
     bg.fill(fill);
     bg.stroke({ color: stroke, width: 1, alignment: 0 });
+
+    if (isOccluded) {
+      // "Seal" border — a dashed-feeling inset rectangle drawn as four
+      // short strokes at the corners. Reads as "this is sealed". Static
+      // (no animation): the brief called for subtle, identifiable,
+      // never-a-surprise. The corners sit *inside* the tile so the
+      // underlying base stroke is untouched and a probe preview outline
+      // can still render on top without stacking visual noise.
+      const inset = 3;
+      const len = 5;
+      const right = TILE_SIZE - inset;
+      const bottom = TILE_SIZE - inset;
+      // Four L-shaped corner brackets
+      const corners: Array<[number, number, number, number]> = [
+        [inset, inset + len, inset, inset], // top-left vertical
+        [inset, inset, inset + len, inset], // top-left horizontal
+        [right - len, inset, right, inset], // top-right horizontal
+        [right, inset, right, inset + len], // top-right vertical
+        [inset, bottom - len, inset, bottom], // bottom-left vertical
+        [inset, bottom, inset + len, bottom], // bottom-left horizontal
+        [right - len, bottom, right, bottom], // bottom-right horizontal
+        [right, bottom - len, right, bottom], // bottom-right vertical
+      ];
+      for (const [x0, y0, x1, y1] of corners) {
+        bg.moveTo(x0, y0);
+        bg.lineTo(x1, y1);
+      }
+      bg.stroke({ color: COLOR_PROTECTED_ACCENT, width: 1, alignment: 0.5 });
+    }
 
     if (isProbePreview) {
       // Inset cyan outline: instrumentation mark, not a selection state.

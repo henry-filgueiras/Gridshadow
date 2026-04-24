@@ -51,3 +51,31 @@ export function tallyTiles(state: GameState): TileTally {
     total: state.board.tiles.length,
   };
 }
+
+// Protected Constraints v1 tally. `occluded` is the count of tiles the
+// operator can currently pay to unveil — resolved, protected, not yet
+// unveiled. `unveiled` is how many they've already paid for. `total` is
+// the number of protected tiles on the board (board-intrinsic, stable
+// under any action log). HUD surfaces `occluded` as the actionable
+// number; the others are available for future observers.
+export interface ProtectedTally {
+  readonly total: number;
+  readonly occluded: number;
+  readonly unveiled: number;
+}
+
+export function protectedTally(state: GameState): ProtectedTally {
+  let total = 0;
+  let occluded = 0;
+  let unveiled = 0;
+  for (const tile of state.board.tiles) {
+    if (!tile.protected) continue;
+    total++;
+    if (tile.valueRevealed) {
+      unveiled++;
+    } else if (tile.state === 'resolved') {
+      occluded++;
+    }
+  }
+  return { total, occluded, unveiled };
+}

@@ -6,7 +6,7 @@ import type {
   ProbeOrientation,
   Tile,
 } from '../types';
-import { generateBoard, tileAt } from './board';
+import { generateBoard, PROTECTED_TUNABLES, tileAt } from './board';
 
 // Witness Probe v1 tunables. Kept at file scope so future variants (shorter
 // probes, elite-cost probes) can reference them without touching the reducer.
@@ -43,6 +43,7 @@ export type GameAction =
       readonly y: number;
       readonly orientation: ProbeOrientation;
     }
+  | { readonly type: 'unveil'; readonly x: number; readonly y: number }
   | { readonly type: 'regen'; readonly seed: number };
 
 export function createGameState(config: BoardConfig): GameState {
@@ -76,6 +77,8 @@ export function reduceGame(state: GameState, action: GameAction): GameState {
       return confirmTile(state, action.x, action.y);
     case 'probe':
       return probeTile(state, action.x, action.y, action.orientation);
+    case 'unveil':
+      return unveilTile(state, action.x, action.y);
     case 'regen':
       return createGameState({ ...state.board.config, seed: action.seed });
   }
@@ -157,6 +160,12 @@ function confirmTile(state: GameState, x: number, y: number): GameState {
   if (tile.state !== 'resolved') return state;
   if (tile.isMine) return state;
   if (tile.adjacentMines === 0) return state;
+  // Protected Constraints v1: confirm requires the constraint to be
+  // visible to the operator. If we let a chord run against a hidden
+  // number, the outcome (revealed neighbors vs. breach) would leak the
+  // occluded count by reverse-inference — defeating the whole point of
+  // charging for the unveil. Refuse silently.
+  if (tile.protected && !tile.valueRevealed) return state;
 
   const { width, height } = state.board.config;
   let flaggedCount = 0;
@@ -325,6 +334,49 @@ export const PROBE_TUNABLES = {
   minUnresolved: PROBE_MIN_UNRESOLVED,
   historyLimit: PROBE_HISTORY_LIMIT,
 } as const;
+
+// Protected Constraints v1 — unveil action. The tile has already been
+// proved safe (resolved, non-mine); the *number* that quantifies its
+// adjacency is what we're buying. Cost: 1 witness charge, on acceptance
+// only, matching the reveal cost — this is intentional. The experiment
+// is whether charge still feels meaningful when the purchase is
+// interpretation rather than safety; if unveil cost diverged from reveal
+// cost, we'd be answering a different question.
+//
+// Refusal (no-op, no cost) on any of:
+//   - run not in active phase
+//   - target out of bounds
+//   - target not `resolved` (unresolved tiles need `reveal` first)
+//   - target not `protected` (nothing to unveil)
+//   - target already `valueRevealed` (the number is already visible)
+//   - insufficient charge
+//
+// On success: flip `valueRevealed` to true and decrement charge by 1.
+// No cascade, no phase transition, no confirms increment. The board's
+// truth has not changed — only the operator's legibility of that truth.
+function unveilTile(state: GameState, x: number, y: number): GameState {
+  if (state.phase.kind !== 'active') return state;
+
+  const tile = tileAt(state.board, x, y);
+  if (!tile) return state;
+  if (tile.state !== 'resolved') return state;
+  if (!tile.protected) return state;
+  if (tile.valueRevealed) return state;
+  if (state.witness.charge < PROTECTED_TUNABLES.unveilCost) return state;
+
+  const { width } = state.board.config;
+  const nextTiles = state.board.tiles.slice();
+  nextTiles[y * width + x] = { ...tile, valueRevealed: true };
+
+  return {
+    ...state,
+    board: { ...state.board, tiles: nextTiles },
+    witness: {
+      ...state.witness,
+      charge: state.witness.charge - PROTECTED_TUNABLES.unveilCost,
+    },
+  };
+}
 
 // Shared reveal core. Mutates `tiles` in place: reveals the tile at (x,y),
 // cascading through any zero-adjacency flood. Returns true iff the targeted
