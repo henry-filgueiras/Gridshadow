@@ -1,8 +1,8 @@
-import { useEffect, useReducer, useRef, useState } from 'react';
+import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { Application } from 'pixi.js';
 import { createGameState, reduceGame } from '../engine';
 import { BoardRenderer } from '../render';
-import type { BoardConfig, ProbeOrientation } from '../types';
+import type { BoardConfig, Coord, ProbeOrientation } from '../types';
 import { HUD } from './HUD';
 
 const INITIAL_CONFIG: BoardConfig = {
@@ -31,6 +31,26 @@ export function GameView() {
   useEffect(() => {
     probeModeRef.current = probeMode;
   }, [probeMode]);
+
+  // Which probe-history entry is currently being hovered in the HUD. Pure UI
+  // state: the engine already owns the ledger (deterministic), this is only
+  // "which row is the cursor over right now?". We clamp to the current
+  // history length so a regen (which resets probeHistory to []) cannot leave
+  // a dangling index pointing at an entry that no longer exists.
+  const [hoveredHistoryIndex, setHoveredHistoryIndex] = useState<number | null>(
+    null,
+  );
+  const historyLen = state.probeHistory.length;
+  useEffect(() => {
+    if (hoveredHistoryIndex !== null && hoveredHistoryIndex >= historyLen) {
+      setHoveredHistoryIndex(null);
+    }
+  }, [historyLen, hoveredHistoryIndex]);
+
+  const historyHighlight: ReadonlyArray<Coord> | null = useMemo(() => {
+    if (hoveredHistoryIndex === null) return null;
+    return state.probeHistory[hoveredHistoryIndex]?.cells ?? null;
+  }, [hoveredHistoryIndex, state.probeHistory]);
 
   // Probe mode auto-exits on terminal phase so the HUD indicator can't
   // persist past a run ending. Reseed enters active again with probe mode
@@ -124,7 +144,10 @@ export function GameView() {
       renderer = r;
       rendererRef.current = r;
 
-      r.render(state, { probeMode: probeModeRef.current });
+      r.render(state, {
+        probeMode: probeModeRef.current,
+        historyHighlight: null,
+      });
     })();
 
     return () => {
@@ -139,8 +162,8 @@ export function GameView() {
   }, []);
 
   useEffect(() => {
-    rendererRef.current?.render(state, { probeMode });
-  }, [state, probeMode]);
+    rendererRef.current?.render(state, { probeMode, historyHighlight });
+  }, [state, probeMode, historyHighlight]);
 
   return (
     <div className="game-view">
@@ -153,6 +176,8 @@ export function GameView() {
       <HUD
         state={state}
         probeMode={probeMode}
+        hoveredHistoryIndex={hoveredHistoryIndex}
+        onHistoryHover={setHoveredHistoryIndex}
         onReseed={(seed) => dispatch({ type: 'regen', seed })}
       />
     </div>

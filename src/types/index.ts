@@ -80,8 +80,9 @@ export interface GameState {
   readonly cursor: Coord | null;
   readonly phase: GamePhase;
   readonly witness: WitnessState;
-  // Most recent successful probe reading, or null if no probe has landed in
-  // this run. Replaced (not appended) on each probe — v1 surfaces one
-  // reading at a time; a probe log is deferred.
-  readonly lastProbe: ProbeReading | null;
+  // Ledger of recent successful Witness Probes, newest first, bounded.
+  // The engine owns this list so that same seed + same action log reproduces
+  // the same ledger — the UI reads it, it does not author it. `probeHistory[0]`
+  // is the most recent reading; empty array means no probe has landed yet.
+  readonly probeHistory: ReadonlyArray<ProbeReading>;
 }

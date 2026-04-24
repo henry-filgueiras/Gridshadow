@@ -18,6 +18,11 @@ const PROBE_COST = 2;
 // cells) can still pass when every on-board cell is unresolved, and the
 // instrument cannot collapse to a 2-cell "which one is the mine?" question.
 const PROBE_MIN_UNRESOLVED = 3;
+// Probe ledger size. Memory prosthetic, not analytics surface: the player
+// should be able to see the whole ledger at a glance without scrolling. 8 is
+// the top of the "working memory" band (5–9 items) — enough to survive a
+// multi-probe reasoning pass without becoming a spreadsheet.
+const PROBE_HISTORY_LIMIT = 8;
 
 // Pure reducer surface for the engine. UI dispatches actions, renderer reads
 // snapshots. No I/O, no React, no timers — all side effects live in clients.
@@ -47,7 +52,7 @@ export function createGameState(config: BoardConfig): GameState {
     cursor: null,
     phase: { kind: 'active' },
     witness: { charge: max, max, confirms: 0 },
-    lastProbe: null,
+    probeHistory: [],
   };
 }
 
@@ -235,9 +240,13 @@ function resolvePhase(tiles: ReadonlyArray<Tile>): GamePhase {
 //   - segment contains fewer than PROBE_MIN_UNRESOLVED truly-unresolved
 //     cells (flagged and resolved do not count) — the anti-collapse gate
 //
-// On success: deduct PROBE_COST from charge, store a `ProbeReading` on
-// state.lastProbe. No tile state changes — the board's truth is untouched,
-// only the player's *knowledge* grows.
+// On success: deduct PROBE_COST from charge, prepend the new `ProbeReading`
+// to `state.probeHistory` (newest first), and cap the ledger at
+// PROBE_HISTORY_LIMIT — oldest entries fall off deterministically. No tile
+// state changes: the board's truth is untouched, only the player's
+// *knowledge* grows. Because history lives on engine state and only mutates
+// through this pure reducer, same seed + same action log reproduces the
+// same ledger on replay.
 function probeTile(
   state: GameState,
   x: number,
@@ -264,18 +273,27 @@ function probeTile(
 
   if (unresolvedInSegment < PROBE_MIN_UNRESOLVED) return state;
 
+  const reading: GameState['probeHistory'][number] = {
+    at: { x, y },
+    orientation,
+    cells,
+    hazardCount,
+  };
+  // Prepend (newest first), then truncate to the bounded window. Dropping
+  // from the tail is deterministic — a ninth probe always evicts entry #8,
+  // never some other index — so replay stays stable.
+  const nextHistory =
+    state.probeHistory.length < PROBE_HISTORY_LIMIT
+      ? [reading, ...state.probeHistory]
+      : [reading, ...state.probeHistory.slice(0, PROBE_HISTORY_LIMIT - 1)];
+
   return {
     ...state,
     witness: {
       ...state.witness,
       charge: state.witness.charge - PROBE_COST,
     },
-    lastProbe: {
-      at: { x, y },
-      orientation,
-      cells,
-      hazardCount,
-    },
+    probeHistory: nextHistory,
   };
 }
 
@@ -305,6 +323,7 @@ export const PROBE_TUNABLES = {
   length: PROBE_LENGTH,
   cost: PROBE_COST,
   minUnresolved: PROBE_MIN_UNRESOLVED,
+  historyLimit: PROBE_HISTORY_LIMIT,
 } as const;
 
 // Shared reveal core. Mutates `tiles` in place: reveals the tile at (x,y),

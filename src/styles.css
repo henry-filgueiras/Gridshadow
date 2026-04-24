@@ -355,52 +355,43 @@ body,
   border-radius: 2px;
 }
 
-.hud-probe-reading {
-  margin-bottom: 4px;
-  padding: 6px 8px;
-  background: rgba(10, 18, 24, 0.7);
-  border-left: 2px solid #7effff;
-  border-radius: 2px;
-}
-
-.hud-probe-reading-line {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  color: #c7d1db;
-  font-variant-numeric: tabular-nums;
-}
-
-.hud-probe-glyph {
-  color: #7effff;
-  font-size: 14px;
-  font-weight: bold;
-}
-
-.hud-probe-coord {
-  font-size: 12px;
-  color: #c7d1db;
-}
-
-.hud-probe-cells {
-  margin-left: auto;
+.hud-probe-note {
   font-size: 10px;
   letter-spacing: 0.08em;
   color: #5a6d80;
   text-transform: uppercase;
 }
 
-.hud-probe-reading-count {
-  margin-top: 2px;
-  font-size: 13px;
-  font-weight: bold;
-  color: #ffffff;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+.hud-history {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px solid #1f2a36;
+  border-radius: 3px;
+  background: rgba(12, 20, 28, 0.6);
 }
 
-.hud-probe-empty {
-  margin-bottom: 4px;
+.hud-history-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.hud-history-label {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #7effff;
+}
+
+.hud-history-count {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: #5a6d80;
+  font-variant-numeric: tabular-nums;
+}
+
+.hud-history-empty {
   padding: 6px 8px;
   font-size: 10px;
   letter-spacing: 0.08em;
@@ -411,7 +402,78 @@ body,
   border-radius: 2px;
 }
 
-.hud-probe-note {
+.hud-history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.hud-history-entry {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 3px 6px;
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  color: #8a9aab;
+  background: rgba(10, 18, 24, 0.4);
+  border-left: 2px solid #1f2a36;
+  border-radius: 2px;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.hud-history-entry:focus {
+  outline: none;
+}
+
+.hud-history-entry-latest {
+  color: #c7d1db;
+  border-left-color: #7effff;
+  background: rgba(10, 26, 32, 0.65);
+}
+
+.hud-history-entry-hover {
+  color: #ffffff;
+  background: rgba(126, 255, 255, 0.14);
+  border-left-color: #7effff;
+}
+
+.hud-history-glyph {
+  color: #7effff;
+  font-size: 13px;
+  font-weight: bold;
+  width: 12px;
+  text-align: center;
+}
+
+.hud-history-coord {
+  letter-spacing: 0.04em;
+}
+
+.hud-history-arrow {
+  color: #3a4a5c;
+}
+
+.hud-history-hazards {
+  color: inherit;
+  font-weight: bold;
+  letter-spacing: 0.04em;
+}
+
+.hud-history-cells {
+  margin-left: auto;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  color: #5a6d80;
+  text-transform: uppercase;
+}
+
+.hud-history-note {
+  margin-top: 6px;
   font-size: 10px;
   letter-spacing: 0.08em;
   color: #5a6d80;

@@ -5,6 +5,8 @@ import type { GameState, ProbeOrientation } from '../types';
 interface HUDProps {
   state: GameState;
   probeMode: ProbeOrientation | null;
+  hoveredHistoryIndex: number | null;
+  onHistoryHover: (index: number | null) => void;
   onReseed: (seed: number) => void;
 }
 
@@ -15,14 +17,20 @@ const ORIENTATION_GLYPH: Record<ProbeOrientation, string> = {
 
 const RESTORE_FLASH_MS = 1800;
 
-export function HUD({ state, probeMode, onReseed }: HUDProps) {
+export function HUD({
+  state,
+  probeMode,
+  hoveredHistoryIndex,
+  onHistoryHover,
+  onReseed,
+}: HUDProps) {
   const { config } = state.board;
   const tally = tallyTiles(state);
   const breach = state.phase.kind === 'breached' ? state.phase.at : null;
   const cleared = state.phase.kind === 'cleared';
   const wStatus = witnessStatus(state);
   const { charge, max, confirms } = state.witness;
-  const { lastProbe } = state;
+  const { probeHistory } = state;
 
   // Confidence-restoration flash. The engine's `witness.confirms` counter
   // increments monotonically on every successful safe Witness Confirmation.
@@ -107,31 +115,62 @@ export function HUD({ state, probeMode, onReseed }: HUDProps) {
               : 'idle'}
           </span>
         </div>
-        {lastProbe ? (
-          <div className="hud-probe-reading">
-            <div className="hud-probe-reading-line">
-              <span className="hud-probe-glyph">
-                {ORIENTATION_GLYPH[lastProbe.orientation]}
-              </span>
-              <span className="hud-probe-coord">
-                {lastProbe.at.x},{lastProbe.at.y}
-              </span>
-              <span className="hud-probe-cells">
-                {lastProbe.cells.length}-cell scan
-              </span>
-            </div>
-            <div className="hud-probe-reading-count">
-              {lastProbe.hazardCount} hazard
-              {lastProbe.hazardCount === 1 ? '' : 's'} detected
-            </div>
-          </div>
-        ) : (
-          <div className="hud-probe-empty">no probe reading</div>
-        )}
         <div className="hud-probe-note">
           structural scan · {PROBE_TUNABLES.length}-cell line · costs{' '}
           {PROBE_TUNABLES.cost} charge
         </div>
+      </div>
+
+      <div
+        className="hud-history"
+        onMouseLeave={() => onHistoryHover(null)}
+      >
+        <div className="hud-history-head">
+          <span className="hud-history-label">witness probe history</span>
+          <span className="hud-history-count">
+            {probeHistory.length
+              ? `${probeHistory.length}/${PROBE_TUNABLES.historyLimit}`
+              : ''}
+          </span>
+        </div>
+        {probeHistory.length === 0 ? (
+          <div className="hud-history-empty">no probes logged</div>
+        ) : (
+          <ul className="hud-history-list" role="list">
+            {probeHistory.map((reading, i) => {
+              const isLatest = i === 0;
+              const isHovered = hoveredHistoryIndex === i;
+              return (
+                <li
+                  // eslint-disable-next-line react/no-array-index-key
+                  key={i}
+                  className={`hud-history-entry ${
+                    isLatest ? 'hud-history-entry-latest' : ''
+                  } ${isHovered ? 'hud-history-entry-hover' : ''}`}
+                  onMouseEnter={() => onHistoryHover(i)}
+                  onFocus={() => onHistoryHover(i)}
+                  onBlur={() => onHistoryHover(null)}
+                  tabIndex={0}
+                >
+                  <span className="hud-history-glyph">
+                    {ORIENTATION_GLYPH[reading.orientation]}
+                  </span>
+                  <span className="hud-history-coord">
+                    x:{reading.at.x} y:{reading.at.y}
+                  </span>
+                  <span className="hud-history-arrow">→</span>
+                  <span className="hud-history-hazards">
+                    {reading.hazardCount} haz
+                  </span>
+                  <span className="hud-history-cells">
+                    {reading.cells.length}c
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        <div className="hud-history-note">hover an entry to re-scan</div>
       </div>
 
       <div className="hud-divider" />

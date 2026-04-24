@@ -13,13 +13,17 @@ archive with a new dated entry that supersedes it.
 ### Stage
 Reveal / flag / breach / clear loop under a finite **witness charge** budget,
 with **Witness Confirmation** (chord) for inference-rewarded claims and the
-**Witness Probe** (line scan) as the first structural-scan instrument.
-Tiles are `unresolved | resolved | flagged`, the run phase is
+**Witness Probe** (line scan) as the first structural-scan instrument,
+backed by a bounded **probe history** ledger so the field's observations
+do not evaporate the moment the last reading is replaced. Tiles are
+`unresolved | resolved | flagged`, the run phase is
 `active | breached | cleared`, the player has a finite pool of direct
 observations, and they now have a second kind of observation available:
-spending extra charge to ask *about a region*, not about a tile. The core
-identity pivot — "spend certainty to make claims *or* to ask a better
-question" — is now expressed in the rules. Next substantive foundation
+spending extra charge to ask *about a region*, not about a tile — and they
+can look back at the last several such questions without relying on a
+paper notebook. The core identity pivot — "spend certainty to make claims
+*or* to ask a better question" — is now expressed in the rules, and the
+first cognitive-prosthetic layer is in place. Next substantive foundation
 decisions: a deterministic replay buffer keyed off the action log, a
 headless test harness, and the second probe geometry (row/column signature
 or rectangular scan) once we have one structural instrument in players'
@@ -59,7 +63,7 @@ excavation bill.
 ### Engine surface (current)
 * `createGameState(config: BoardConfig): GameState` — produces an `active`
   phase with `witness.charge = witness.max = config.witnessCharges`,
-  `witness.confirms = 0`, and `lastProbe = null`.
+  `witness.confirms = 0`, and `probeHistory = []`.
 * `reduceGame(state, action): GameState` where action is one of
   `hover | hoverClear | reveal | flag | confirm | probe | regen`. Pure.
 * `generateBoard(config)`: deterministic from
@@ -105,18 +109,28 @@ excavation bill.
 * **Witness Probe (line scan)**: `probe` targets an unresolved tile with an
   `orientation: 'horizontal' | 'vertical'`. The instrument scans a 5-cell
   line centered on the target (clipped to board bounds), counts all mines
-  in the segment, and returns that count as a `ProbeReading` on
-  `state.lastProbe`. It does **not** reveal which cells are hazards — the
-  instrument buys *structure*, not certainty. Cost: 2 witness charge, on
-  acceptance only. Anti-collapse rule: refused unless the segment contains
-  at least 3 truly-`unresolved` cells (flagged and resolved do not count
-  toward the threshold), which prevents the probe from degenerating into
-  an expensive single-tile reveal when all but one cell is already known.
-  Tile state is untouched — the board's truth is the same before and
-  after; only the player's knowledge grows. Tunables
-  (`PROBE_TUNABLES.length | cost | minUnresolved`) live at engine file
-  scope and are re-exported so HUD copy reads from the same source as
-  the reducer.
+  in the segment, and — on success — prepends a `ProbeReading` to
+  `state.probeHistory` (newest first, capped at 8). It does **not** reveal
+  which cells are hazards — the instrument buys *structure*, not certainty.
+  Cost: 2 witness charge, on acceptance only. Anti-collapse rule: refused
+  unless the segment contains at least 3 truly-`unresolved` cells (flagged
+  and resolved do not count toward the threshold), which prevents the probe
+  from degenerating into an expensive single-tile reveal when all but one
+  cell is already known. Tile state is untouched — the board's truth is
+  the same before and after; only the player's knowledge grows. Tunables
+  (`PROBE_TUNABLES.length | cost | minUnresolved | historyLimit`) live at
+  engine file scope and are re-exported so HUD copy reads from the same
+  source as the reducer.
+* **Probe history (memory prosthetic)**: `state.probeHistory` is a
+  bounded, newest-first ledger of successful probes, owned by the engine.
+  A ninth probe evicts the tail entry deterministically; `regen` clears
+  the ledger alongside the rest of run state. The HUD renders the ledger
+  in a dedicated **witness probe history** block; hovering a row
+  re-highlights that probe's exact cells on the board using the same
+  inset-cyan outline as the live probe preview. Hover is UI-only state
+  — the renderer reads `historyHighlight` through its per-frame overlay,
+  not through engine state — so replays of a given action log produce
+  identical engine state regardless of which rows the player hovered.
 * First-click safety is intentionally NOT implemented: the seed fully
   determines the board, so the first reveal can legitimately detonate.
   The player learning to read the field is the game.
@@ -135,8 +149,11 @@ under a witness budget:
   again (or `Esc`) disarms; while armed, the hovered 5-cell segment is
   outlined in cyan, hover highlight is suppressed, and left-click on the
   center spends 2 charge to return the segment's total hazard count
-  (no per-tile truth revealed); the HUD's probe block displays the last
-  reading's orientation, coordinate, cells scanned, and hazard count
+  (no per-tile truth revealed); the HUD's **witness probe history** block
+  lists the recent successful probes (newest first, up to 8 entries) with
+  orientation / coord / hazards / scanned-cell count; hovering a row
+  re-highlights that probe's exact segment on the board using the same
+  inset cyan outline as the live preview
 * a safe confirmation restores +1 charge (capped at max) and triggers a
   brief "witness confirmed · integrity restored" pill in the HUD, keyed
   off `witness.confirms` incrementing
@@ -811,3 +828,171 @@ action log, a headless test harness / unit tests, and any progression
 or metagame system. The brief continues to forbid shops, batteries,
 passive regen, inventory, backend, multiplayer, and campaign systems —
 still no cathedral.
+
+### 2026-04-23 — Claude Opus 4.7 (Witness Probe History — memory prosthetic)
+The probe instrument existed, but its output evaporated the moment the
+player took the next action: each reading replaced `lastProbe`, so
+"probe → think → forget → sadness" was the real interaction loop and the
+game was implicitly outsourcing cognition to a paper notebook. This pass
+adds a bounded, engine-owned probe ledger and a HUD surface that lets the
+operator look back — *and* re-highlight any past probe's segment on the
+board — without scrolling, filtering, or replay tooling. The brief was
+explicit: remember observations, do not interpret them. No contradiction
+detection, no row/column signatures, no analytics — a notebook, not an
+oracle. Demoted two Canon sections plus the visual-proof probe bullet.
+Verbatim:
+
+**Superseded — Stage:**
+> Reveal / flag / breach / clear loop under a finite **witness charge** budget,
+> with **Witness Confirmation** (chord) for inference-rewarded claims and the
+> **Witness Probe** (line scan) as the first structural-scan instrument.
+> Tiles are `unresolved | resolved | flagged`, the run phase is
+> `active | breached | cleared`, the player has a finite pool of direct
+> observations, and they now have a second kind of observation available:
+> spending extra charge to ask *about a region*, not about a tile. The core
+> identity pivot — "spend certainty to make claims *or* to ask a better
+> question" — is now expressed in the rules. Next substantive foundation
+> decisions: a deterministic replay buffer keyed off the action log, a
+> headless test harness, and the second probe geometry (row/column signature
+> or rectangular scan) once we have one structural instrument in players'
+> hands to calibrate against. Still foundation work — not progression,
+> metagame, or content.
+
+**Superseded — Engine surface (probe bullet):**
+> * **Witness Probe (line scan)**: `probe` targets an unresolved tile with an
+>   `orientation: 'horizontal' | 'vertical'`. The instrument scans a 5-cell
+>   line centered on the target (clipped to board bounds), counts all mines
+>   in the segment, and returns that count as a `ProbeReading` on
+>   `state.lastProbe`. It does **not** reveal which cells are hazards — the
+>   instrument buys *structure*, not certainty. Cost: 2 witness charge, on
+>   acceptance only. Anti-collapse rule: refused unless the segment contains
+>   at least 3 truly-`unresolved` cells (flagged and resolved do not count
+>   toward the threshold), which prevents the probe from degenerating into
+>   an expensive single-tile reveal when all but one cell is already known.
+>   Tile state is untouched — the board's truth is the same before and
+>   after; only the player's knowledge grows. Tunables
+>   (`PROBE_TUNABLES.length | cost | minUnresolved`) live at engine file
+>   scope and are re-exported so HUD copy reads from the same source as
+>   the reducer.
+
+**Superseded — Visual-proof probe line:**
+> * `h` arms a horizontal probe, `v` arms a vertical probe, pressing either
+>   again (or `Esc`) disarms; while armed, the hovered 5-cell segment is
+>   outlined in cyan, hover highlight is suppressed, and left-click on the
+>   center spends 2 charge to return the segment's total hazard count
+>   (no per-tile truth revealed); the HUD's probe block displays the last
+>   reading's orientation, coordinate, cells scanned, and hazard count
+
+Design notes for this pass:
+- **One source of truth, not two.** Rejected the seemingly-obvious shape
+  of keeping both `lastProbe` (the featured reading) and `probeHistory`
+  (the ledger). Those values would always be `probeHistory[0]`, and the
+  moment they could drift — a bug path, a future partial update — the
+  UI and replay semantics would disagree on "what did I just learn?".
+  Replaced `lastProbe` entirely; the HUD reads `probeHistory[0]` when it
+  needs to highlight the latest. Same ergonomics, one fewer invariant.
+- **Ledger is engine state, not UI state.** The brief left the door open
+  for "a very clearly justified deterministic state path" as an
+  alternative, but the cost of either is identical (a small array on
+  GameState vs. a ref in React) and only the engine-owned version
+  survives a future replay buffer, authoritative-host multiplayer, or
+  headless test harness. Replay of an action log on a given seed must
+  reproduce the same ledger; the only way that stays honest is for the
+  reducer to own it. The UI *hover-highlight* is the one part that stays
+  in React — it's the "which row is the cursor over right now?" query,
+  which is genuinely per-session and does not affect rules.
+- **Bound of 8.** The "recommended 5–8" range in the brief lands on the
+  upper edge of the working-memory band; 8 is enough to survive a
+  multi-probe reasoning pass (e.g., parallel scans along adjacent rows)
+  without the panel becoming a spreadsheet. Evicting from the tail is
+  deterministic — a ninth probe always drops entry #8, never some other
+  row — so replay is stable even across the boundary. The constant
+  lives in `PROBE_TUNABLES.historyLimit` next to the other probe tunables
+  so the HUD's `n/max` label reads from the same number as the reducer.
+- **Entry format: orientation-glyph · x:_ y:_ · N haz · Nc.** One line,
+  tabular-numeric, newest first. Resisted adding anything else
+  (timestamp, delta-since-last, charge-at-time-of-probe, cells-detected-
+  that-were-flagged). The brief was explicit: "remember observations,
+  not interpret them." Extra columns would invite an AI-helper mental
+  model; this is a notebook. The latest entry gets a slightly brighter
+  treatment (full opacity, cyan left border) so the operator can still
+  see "what did I just learn?" without scanning — one visual hierarchy,
+  not two separate widgets.
+- **Hover, not click.** The brief called hover the requirement and click
+  optional; shipped hover only. A pin-on-click affordance has two costs
+  — it forces the renderer to track pin state across frames, and it
+  introduces a "how do I unpin?" affordance decision — and the value
+  was marginal over "move the cursor back to the row." Also added
+  `onFocus`/`onBlur` handlers and `tabIndex={0}` on each entry so
+  keyboard-only operators get the same re-highlight via focus traversal.
+  The list's container has an `onMouseLeave` that clears the hover index
+  — important because React's `onMouseLeave` on the list, not per-row,
+  is the event that actually fires when the cursor exits the block via
+  a row gap; otherwise a stale row would stay highlighted.
+- **Same visual language as the live probe preview.** Chose to funnel
+  both the live probe-mode preview and the history re-highlight into a
+  single `previewCells` set inside the renderer, and to draw both with
+  the same inset cyan outline. The design reason the brief asked for
+  the same visual: the operator should read "this is a probe segment"
+  in one glance whether it's a prospective scan or a memory of a past
+  one. The implementation reason: computing them separately with the
+  same appearance would be two draw paths that could drift; unioning
+  them into one set is the cheap, correct move.
+- **History highlight outlives terminal phases.** The live preview
+  suppresses itself on breach or clear (the field is no longer
+  interactive), but history highlight does *not* — the operator may
+  want to look back over their ledger after a breach to understand
+  where their read went wrong. Suppressing it there would remove the
+  prosthetic exactly when it is most valuable.
+- **`hoveredHistoryIndex` is clamped to `historyHistory.length` on
+  change.** A regen clears the ledger but the React state survives; a
+  stale index pointing at (say) entry #5 after a reseed would silently
+  deref undefined and null out the highlight. Safer to explicitly clear
+  in an effect that watches history length — same invariant, fails
+  loud instead of quiet.
+- **No `hud-probe-empty` / `hud-probe-reading*` CSS classes.** The
+  featured "last reading" card from the previous pass is gone — the
+  latest entry is the first row of the ledger now. Deleted the unused
+  styles rather than leaving them as phantom hooks; if a later pass
+  reintroduces a featured card, it can earn its own class name.
+- **Copy stays operational.** "witness probe history", "hover an entry
+  to re-scan", "N/8", "no probes logged". Avoided "log", "journal",
+  "timeline" — this is an instrument trace, not a diary. The right-
+  aligned count is `N/8` not `entries: N` for the same reason the
+  charge reads `N / max`: the operator cares about capacity pressure,
+  not a total.
+
+Files changed this pass:
+- `src/types/index.ts` — removed `lastProbe`; added
+  `probeHistory: ReadonlyArray<ProbeReading>`.
+- `src/engine/state.ts` — added `PROBE_HISTORY_LIMIT`; initialized
+  `probeHistory: []` in `createGameState`; rewrote `probeTile`'s success
+  branch to prepend a reading and cap the ledger deterministically;
+  exposed `historyLimit` via `PROBE_TUNABLES`.
+- `src/ui/HUD.tsx` — replaced the single-reading probe card with a
+  **witness probe history** block rendering a bounded newest-first
+  list; added hover/focus handlers and `tabIndex` for keyboard
+  operators; props expanded with `hoveredHistoryIndex` and
+  `onHistoryHover`.
+- `src/ui/GameView.tsx` — added `hoveredHistoryIndex` UI state, clamp
+  effect, `historyHighlight` memo derived from
+  `state.probeHistory[hoveredHistoryIndex]?.cells`; passed through to
+  the renderer's overlay.
+- `src/render/BoardRenderer.ts` — extended `RenderOverlay` with
+  `historyHighlight: ReadonlyArray<Coord> | null`; unioned its cells
+  into the same `previewCells` set that drives the live probe preview,
+  so one paint path handles both.
+- `src/styles.css` — added `.hud-history*` styles (panel, list, entry
+  rows with latest-and-hover variants, empty state, note); removed
+  the now-unused `.hud-probe-empty` and `.hud-probe-reading*` styles
+  that the previous pass shipped for the single-reading card.
+
+Explicitly deferred (carried forward): contradiction detection (probe
+count vs. flag count in a segment), advanced filters or per-orientation
+views, export/share, a replay viewer, row/column signature probes,
+3×3 block probes, additional probe geometries generally, an analytics
+panel, scroll-back beyond the bounded window, pin-on-click to persist
+a highlight, any progression or metagame system. The brief continues
+to forbid shops, batteries, passive regen, inventory, backend,
+multiplayer, and campaign systems — still no cathedral. The notebook
+is built; the oracle is not.

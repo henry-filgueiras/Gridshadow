@@ -80,6 +80,11 @@ export interface BoardRendererEvents {
 // pollute the reducer's state shape.
 export interface RenderOverlay {
   readonly probeMode: ProbeOrientation | null;
+  // When the operator hovers a probe-history entry in the HUD, the
+  // corresponding segment's cells are passed here so the board re-highlights
+  // exactly what that probe scanned. Same visual language as the live probe
+  // preview — this is "what did I learn?" projected back onto the field.
+  readonly historyHighlight: ReadonlyArray<Coord> | null;
 }
 
 export class BoardRenderer {
@@ -191,11 +196,17 @@ export class BoardRenderer {
     const breached = breachAt !== null;
     const cleared = state.phase.kind === 'cleared';
 
-    // Derive the probe preview's set of tile indices once per paint. The
-    // segment geometry comes from the engine's own `probeSegment`, so the
-    // preview outline cannot drift from what the probe action actually
-    // scans. Preview only appears in active phase + probe mode on + cursor
-    // on-board — terminal phases suppress it along with hover.
+    // Derive the probe preview's set of tile indices once per paint. Two
+    // sources feed it, sharing one visual (inset cyan outline):
+    //   - live probe-mode preview driven by the on-board cursor
+    //   - history re-highlight driven by a HUD hover
+    // Both use the same cells-to-indices set, so the painter doesn't care
+    // which one produced it. The live preview's geometry comes from the
+    // engine's own `probeSegment`, and the history highlight's cells come
+    // straight from the stored `ProbeReading.cells` — neither path can
+    // drift from what the probe action actually scanned. Terminal phases
+    // suppress the live preview; history highlighting remains available so
+    // the operator can still look back over their ledger.
     let previewCells: Set<number> | null = null;
     if (
       overlay.probeMode !== null &&
@@ -211,6 +222,12 @@ export class BoardRenderer {
         overlay.probeMode,
       );
       previewCells = new Set(cells.map((c) => c.y * width + c.x));
+    }
+    if (overlay.historyHighlight !== null) {
+      if (previewCells === null) previewCells = new Set();
+      for (const c of overlay.historyHighlight) {
+        previewCells.add(c.y * width + c.x);
+      }
     }
 
     for (let y = 0; y < height; y++) {
