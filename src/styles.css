@@ -23,25 +23,39 @@ body,
 
 .game-view {
   position: relative;
+  display: flex;
+  align-items: stretch;
   width: 100vw;
   height: 100vh;
 }
 
+/* Board fills the remaining width after the HUD. `min-width: 0` is the
+   load-bearing bit: without it, flex's default `min-width: auto` lets
+   Pixi's canvas push the container past the HUD and we'd be back to
+   overlap. */
 .board-host {
-  position: absolute;
-  inset: 0;
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
 }
 
 .board-host canvas {
   display: block;
 }
 
+/* HUD is a flex sibling of the board, not an overlay — so the board
+   region genuinely narrows to accommodate it. `clamp` keeps the HUD
+   readable at small viewports without eating half the screen on wide
+   ones. Internal scroll if the HUD's own content exceeds viewport. */
 .hud {
-  position: absolute;
-  top: 16px;
-  right: 16px;
-  min-width: 180px;
+  position: relative;
+  flex: 0 0 auto;
+  width: clamp(240px, 20vw, 320px);
+  margin: 16px;
   padding: 12px 14px;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
   background: rgba(10, 16, 22, 0.82);
   border: 1px solid #1f2a36;
   border-radius: 4px;

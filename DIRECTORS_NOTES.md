@@ -1442,3 +1442,20 @@ brief continues to forbid shops, batteries, passive regen, inventory,
 campaign systems — still no cathedral. This is an experiment. The
 open question the pass is asking: when truth resists observation,
 does the game get better?
+
+### 2026-04-24 — Claude Opus 4.7 (layout fix — HUD no longer overlays the board)
+Bug report: at 100% zoom on the 24×24 board, the HUD overlapped the
+right edge of the grid. Root cause was the original layout: board-host
+was `position: absolute; inset: 0` filling the viewport, HUD was
+`position: absolute; top/right: 16px` layered *on top* of the board.
+At 16×16 the centered 544×544 grid fit inside the HUD-free zone; at
+814×814 the grid extended behind the HUD. Fix: switched `.game-view`
+to a flexbox row. Board-host is now `flex: 1 1 auto; min-width: 0`
+(the `min-width: 0` is load-bearing — flex's default `auto` would let
+Pixi's canvas push the board container back out past the HUD and
+reintroduce the overlap). HUD is a flex sibling with `width:
+clamp(240px, 20vw, 320px)` and `max-height: calc(100vh - 32px);
+overflow-y: auto` so it scrolls internally on short viewports. Pixi's
+`resizeTo: host` already listens to the host element's size, so the
+board centers itself in the remaining width with no renderer changes
+needed. Not a design pass; no Canon changes.
