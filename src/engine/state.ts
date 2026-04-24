@@ -108,14 +108,14 @@ function revealTile(state: GameState, x: number, y: number): GameState {
     charge: state.witness.charge - 1,
   };
 
-  return {
+  return applyClosureRestoration({
     ...state,
     board: { ...state.board, tiles: nextTiles },
     phase: detonated
       ? { kind: 'breached', at: { x, y } }
       : resolvePhase(nextTiles),
     witness: nextWitness,
-  };
+  });
 }
 
 function toggleFlag(state: GameState, x: number, y: number): GameState {
@@ -131,10 +131,10 @@ function toggleFlag(state: GameState, x: number, y: number): GameState {
     ...tile,
     state: tile.state === 'flagged' ? 'unresolved' : 'flagged',
   };
-  return {
+  return applyClosureRestoration({
     ...state,
     board: { ...state.board, tiles: nextTiles },
-  };
+  });
 }
 
 // Witness Confirmation — the ritual action. The player asserts that a local
@@ -142,9 +142,17 @@ function toggleFlag(state: GameState, x: number, y: number): GameState {
 // the number of adjacent flags exactly matches the tile's adjacency count,
 // the engine reveals every remaining unflagged neighbor as a group.
 //
-// Costs no charge. A successful safe confirmation restores 1 charge (capped
-// at max) and increments `witness.confirms` — the UI uses that counter for
-// its restoration feedback, so it stays deterministic.
+// Costs no charge. Confirmation no longer refunds charge by itself: the
+// button being correct is not what earns authority back. A correct confirm
+// does, however, typically produce local stabilization (the target tile's
+// last unresolved neighbors become resolved, flag count already matches),
+// which triggers Constraint Closure Restoration on the target and any
+// neighbors that were waiting on this tile's removal. The +N charge that
+// used to look like a confirm refund now arrives because the field
+// stabilized, not because the operator clicked.
+//
+// `witness.confirms` still increments on every successful safe confirm, so
+// the HUD can tally ratified reads without conflating them with charge.
 //
 // If the player's flags are wrong, the breach happens through the normal
 // reveal path on whichever neighbor turns out to be the hazard. No
@@ -207,19 +215,21 @@ function confirmTile(state: GameState, x: number, y: number): GameState {
     };
   }
 
-  // Safe confirmation. Restore 1 charge (capped) and record the success.
+  // Safe confirmation. No direct charge refund — restoration, if any,
+  // arrives through Constraint Closure on the target tile (whose local
+  // truth is now fully stabilized by construction) and any resolved
+  // numbered neighbors that were waiting on this confirm to close.
   const nextWitness = {
     ...state.witness,
-    charge: Math.min(state.witness.max, state.witness.charge + 1),
     confirms: state.witness.confirms + 1,
   };
 
-  return {
+  return applyClosureRestoration({
     ...state,
     board: { ...state.board, tiles: nextTiles },
     phase: resolvePhase(nextTiles),
     witness: nextWitness,
-  };
+  });
 }
 
 // Clear detection. Called after any safe reveal or safe confirmation to
@@ -236,6 +246,92 @@ function resolvePhase(tiles: ReadonlyArray<Tile>): GamePhase {
   }
   return { kind: 'cleared' };
 }
+
+// Constraint Closure Restoration — authority returns because the field
+// actually stabilized, not because a button was clicked. For every
+// resolved numbered tile whose local truth is fully accounted for — flag
+// count equals the constraint AND no adjacent tile is still unresolved —
+// we flip `closedForWitness` once and bank +1 witness charge (capped at
+// max). The flip is strictly monotonic, so unflag/reflag churn cannot
+// farm the refund.
+//
+// Why the two-count rule is equivalent to "every flag covers a real
+// mine": in active phase, resolved mines would have breached, so the
+// resolved-non-mine set is clean. If flags === constraint and
+// unresolved === 0, the constraint's mines must all live inside the flag
+// set (there's nowhere else for them to be). We never need to consult
+// `isMine` to verify — "genuine local stabilization" falls out of the
+// two visible counts.
+//
+// Why contradictions block closure for free: an over-flagged tile has
+// flags > constraint, and an under-spaced tile has flags + unresolved <
+// constraint; neither matches the closure gate. Sloppy flagging costs
+// the operator the restoration until they resolve the contradiction.
+// No explicit "punish contradictions" branch is needed.
+//
+// Why occluded protected tiles are skipped: their constraint number is
+// deliberately hidden. If closure could fire against them, the +1
+// charge tick would leak the number by reverse-inference (the operator
+// would know "my flags must now equal the hidden value"). Deferring
+// closure until after `unveil` pays for the read preserves the
+// purchase's meaning.
+//
+// Scan is row-major over the whole tile array — trivial at 24×24, and
+// deterministic enough to keep action-log replays bit-identical.
+// Suppressed in terminal phases because a breached field is already
+// telling a different story, and a cleared field's restoration would
+// be post-hoc noise.
+function applyClosureRestoration(state: GameState): GameState {
+  if (state.phase.kind !== 'active') return state;
+
+  const { tiles } = state.board;
+  const { width, height } = state.board.config;
+
+  let nextTiles: Tile[] | null = null;
+  let restored = 0;
+
+  for (let i = 0; i < tiles.length; i++) {
+    const tile = tiles[i]!;
+    if (tile.state !== 'resolved') continue;
+    if (tile.isMine) continue;
+    if (tile.adjacentMines === 0) continue;
+    if (tile.protected && !tile.valueRevealed) continue;
+    if (tile.closedForWitness) continue;
+
+    let flags = 0;
+    let unresolved = 0;
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        if (dx === 0 && dy === 0) continue;
+        const nx = tile.x + dx;
+        const ny = tile.y + dy;
+        if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+        const n = tiles[ny * width + nx]!;
+        if (n.state === 'flagged') flags++;
+        else if (n.state === 'unresolved') unresolved++;
+      }
+    }
+    if (unresolved !== 0) continue;
+    if (flags !== tile.adjacentMines) continue;
+
+    if (!nextTiles) nextTiles = tiles.slice();
+    nextTiles[i] = { ...tile, closedForWitness: true };
+    restored++;
+  }
+
+  if (!nextTiles) return state;
+
+  const { max, charge } = state.witness;
+  return {
+    ...state,
+    board: { ...state.board, tiles: nextTiles },
+    witness: {
+      ...state.witness,
+      charge: Math.min(max, charge + restored),
+    },
+  };
+}
+
 
 // Witness Probe — structural scan. Does not reveal tile state; returns the
 // total hazard count inside a 5-cell line centered on the target. The
@@ -368,14 +464,20 @@ function unveilTile(state: GameState, x: number, y: number): GameState {
   const nextTiles = state.board.tiles.slice();
   nextTiles[y * width + x] = { ...tile, valueRevealed: true };
 
-  return {
+  // Unveil can unblock Constraint Closure on this tile: occluded tiles are
+  // deliberately excluded from closure (to avoid leaking the constraint
+  // number via charge restoration), so the moment the operator pays to
+  // read the number, any already-satisfied local frame is allowed to
+  // bank its restoration. A freshly-unveiled 3 surrounded by 3 correct
+  // flags and 0 unresolved neighbors recovers +1 immediately.
+  return applyClosureRestoration({
     ...state,
     board: { ...state.board, tiles: nextTiles },
     witness: {
       ...state.witness,
       charge: state.witness.charge - PROTECTED_TUNABLES.unveilCost,
     },
-  };
+  });
 }
 
 // Shared reveal core. Mutates `tiles` in place: reveals the tile at (x,y),

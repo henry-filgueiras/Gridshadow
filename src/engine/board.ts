@@ -40,6 +40,7 @@ export function generateBoard(config: BoardConfig): Board {
       state: 'unresolved',
       protected: false,
       valueRevealed: false,
+      closedForWitness: false,
     };
   }
 

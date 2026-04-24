@@ -25,6 +25,13 @@ export interface Tile {
   // player has paid to reveal this tile's constraint number. Meaningless
   // when `protected === false` (always read as unveiled by UI).
   readonly valueRevealed: boolean;
+  // Constraint Closure Restoration: true once this tile has banked its
+  // one-time witness charge for being fully locally stabilized (flags
+  // match the constraint and no adjacent tile is unresolved). Strictly
+  // monotonic — false→true, never the other way — so a flag/unflag churn
+  // can't re-award the refund. Only numbered, visible-value, non-mine
+  // tiles ever transition to true; the reducer is the sole author.
+  readonly closedForWitness: boolean;
 }
 
 export interface BoardConfig {

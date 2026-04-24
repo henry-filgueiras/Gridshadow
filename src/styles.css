@@ -324,31 +324,6 @@ body,
   50% { box-shadow: 0 0 0 2px rgba(255, 70, 85, 0.35); }
 }
 
-.hud-witness-restore {
-  margin-top: 6px;
-  height: 14px;
-  font-size: 10px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: rgba(126, 255, 255, 0);
-  transition: color 180ms ease;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.hud-witness-restore-on {
-  color: #7effff;
-  animation: hud-witness-restore-fade 1.8s ease-out;
-}
-
-@keyframes hud-witness-restore-fade {
-  0%   { color: rgba(126, 255, 255, 0); transform: translateY(2px); }
-  12%  { color: #ffffff; transform: translateY(0); }
-  70%  { color: #7effff; }
-  100% { color: rgba(126, 255, 255, 0); }
-}
-
 .hud-probe {
   margin-top: 8px;
   padding: 8px 10px;

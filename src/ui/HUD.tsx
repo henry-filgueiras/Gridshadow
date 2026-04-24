@@ -1,4 +1,3 @@
-import { useEffect, useRef, useState } from 'react';
 import {
   PROBE_TUNABLES,
   PROTECTED_TUNABLES,
@@ -33,8 +32,6 @@ const ORIENTATION_GLYPH: Record<ProbeOrientation, string> = {
   vertical: '↕',
 };
 
-const RESTORE_FLASH_MS = 1800;
-
 export function HUD({
   state,
   probeMode,
@@ -51,24 +48,6 @@ export function HUD({
   const wStatus = witnessStatus(state);
   const { charge, max, confirms } = state.witness;
   const { probeHistory } = state;
-
-  // Confidence-restoration flash. The engine's `witness.confirms` counter
-  // increments monotonically on every successful safe Witness Confirmation.
-  // We detect increments and surface a brief pill. The timer itself is
-  // UI-ephemeral — engine state stays deterministic — and the ref-before-
-  // effect-body update avoids double-firing under StrictMode.
-  const prevConfirmsRef = useRef(confirms);
-  const [flashing, setFlashing] = useState(false);
-  useEffect(() => {
-    const prev = prevConfirmsRef.current;
-    prevConfirmsRef.current = confirms;
-    if (confirms > prev) {
-      setFlashing(true);
-      const id = window.setTimeout(() => setFlashing(false), RESTORE_FLASH_MS);
-      return () => window.clearTimeout(id);
-    }
-    return undefined;
-  }, [confirms]);
 
   return (
     <div className="hud">
@@ -109,15 +88,6 @@ export function HUD({
           {wStatus === 'exhausted'
             ? 'charge exhausted — inference only'
             : 'direct reveal cost: 1 charge'}
-        </div>
-        <div
-          className={`hud-witness-restore ${
-            flashing ? 'hud-witness-restore-on' : ''
-          }`}
-          role="status"
-          aria-live="polite"
-        >
-          {flashing ? 'witness confirmed · integrity restored' : ''}
         </div>
       </div>
 
@@ -283,7 +253,7 @@ export function HUD({
         <div>left-click unresolved — resolve (costs 1 charge)</div>
         <div>right-click — flag (free)</div>
         <div>click numbered tile — confirm (when flags match)</div>
-        <div>successful confirm restores +1 charge</div>
+        <div>fully stabilizing a constraint restores +1 charge</div>
         <div>
           h / v — arm horizontal / vertical probe (costs{' '}
           {PROBE_TUNABLES.cost} charge)

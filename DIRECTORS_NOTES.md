@@ -17,23 +17,30 @@ for inference-rewarded claims, the **Witness Probe** (line scan) as the
 first structural-scan instrument, a bounded **probe history** ledger that
 preserves recent readings, **contradiction highlighting** — a proof-only
 truth layer that marks any resolved numbered tile whose local
-flag/unresolved counts make its constraint impossible to satisfy — and
-**Protected Constraints v1** as a live experiment: a deterministic ~12%
-fraction of safe numbered tiles reveal as "safe, but value sealed" and
-require 1 witness charge to unveil the constraint number. Tiles are
-`unresolved | resolved | flagged`, the run phase is `active | breached |
-cleared`, the player has a finite pool of direct observations, they can
-ask *about a region* rather than a tile, they can look back at the last
-several such questions without a paper notebook, the field visibly refuses
-to host impossibilities, and some tiles require an additional payment to
-reveal their constraint after being proved safe. The identity loop now
-includes "interpretation costs authority" — safety and legibility are
-separable purchases. Next substantive foundation decisions: evaluating
-whether hidden-value pressure changes the inference/payment ratio enough
-to become canon, a deterministic replay buffer keyed off the action log,
-a headless test harness, and the second probe geometry (row/column
-signature or rectangular scan). Still foundation work — not progression,
-metagame, or content.
+flag/unresolved counts make its constraint impossible to satisfy —
+**Protected Constraints v1** as a live experiment where a deterministic
+~12% fraction of safe numbered tiles reveal as "safe, but value sealed"
+and require 1 witness charge to unveil the constraint number, and
+**Constraint Closure Restoration** — the authority-return layer, where
+witness charge comes back to the operator when a resolved numbered tile
+becomes locally fully stabilized (flags match its constraint, no adjacent
+tile remains unresolved), strictly once per tile, automatically, with no
+button press and no ceremony. Tiles are `unresolved | resolved | flagged`,
+the run phase is `active | breached | cleared`, the player has a finite
+pool of direct observations, they can ask *about a region* rather than a
+tile, they can look back at the last several such questions without a
+paper notebook, the field visibly refuses to host impossibilities, some
+tiles require an additional payment to reveal their constraint after
+being proved safe, and authority returns only when the field actually
+stabilizes — not when the operator clicks. The identity loop now reads:
+safety and legibility are separate purchases, and restoration is earned
+by demonstrated understanding, not by button correctness. Next
+substantive foundation decisions: evaluating whether closure-only
+restoration tightens the economy enough to become canon over a full run,
+a deterministic replay buffer keyed off the action log, a headless test
+harness, and the second probe geometry (row/column signature or
+rectangular scan). Still foundation work — not progression, metagame, or
+content.
 
 ### Stack
 * **Language:** TypeScript (strict, `verbatimModuleSyntax`).
@@ -120,10 +127,29 @@ excavation bill.
   least one adjacent unresolved, unflagged neighbor exists, every such
   neighbor is revealed (using the same cascade core as `reveal`). If any
   revealed neighbor is a mine the run breaches at that neighbor; otherwise
-  the confirmation is successful — `witness.charge` is incremented by 1
-  (capped at `max`) and `witness.confirms` increments by 1. Refused
+  the confirmation is successful — `witness.confirms` increments by 1.
+  Confirm no longer refunds witness charge directly; any restoration that
+  follows a correct confirm arrives because the confirm produced
+  **Constraint Closure** on the target tile (and possibly on resolved
+  numbered neighbors), not because the button was pressed. Refused
   confirmations (wrong tile state, zero adjacency, flag-count mismatch,
   no unresolved neighbors, breached phase) do not change state.
+* **Constraint Closure Restoration**: witness charge is returned when a
+  resolved numbered tile's local truth is fully stabilized — `adjacentFlags
+  === tile.adjacentMines` AND no Moore-neighbor is `unresolved`. Each
+  eligible tile banks `closedForWitness: true` exactly once and adds +1
+  charge (capped at `max`). Strictly monotonic: un-flagging or re-flagging
+  after closure cannot re-award the refund. Zero-adjacency tiles are not
+  anchors (nothing to stabilize). Protected-but-occluded tiles are skipped
+  until `valueRevealed` — otherwise the charge tick would leak the hidden
+  constraint by reverse-inference. Contradictions (over-flag or
+  under-space) naturally fail the gate, so sloppy flagging loses access to
+  the restoration without any explicit punishment branch. The detection
+  lives in a single pure `applyClosureRestoration` helper inside
+  `state.ts`, applied after every mutating action (`reveal`, `flag`,
+  `confirm`, `unveil`); suppressed in terminal phases. Replays keyed on
+  the action log reproduce identical closures and identical charge
+  trajectories.
 * **Witness Probe (line scan)**: `probe` targets an unresolved tile with an
   `orientation: 'horizontal' | 'vertical'`. The instrument scans a 5-cell
   line centered on the target (clipped to board bounds), counts all mines
@@ -205,9 +231,15 @@ confirm / probe / unveil loop under a witness budget:
   orientation / coord / hazards / scanned-cell count; hovering a row
   re-highlights that probe's exact segment on the board using the same
   inset cyan outline as the live preview
-* a safe confirmation restores +1 charge (capped at max) and triggers a
-  brief "witness confirmed · integrity restored" pill in the HUD, keyed
-  off `witness.confirms` incrementing
+* a safe confirmation no longer grants a charge refund directly — it
+  still increments the confirms tally, but any restoration that follows
+  is produced by **Constraint Closure** on the target tile (and resolved
+  numbered neighbors freed by the confirm)
+* every time a resolved numbered tile becomes locally fully stabilized
+  — adjacent flags match its constraint AND no adjacent tile is
+  unresolved — its `closedForWitness` flips once and +1 charge is
+  returned (capped at max), silently; no pill, no banner, just the meter
+  ticking up
 * a confirmation with wrong flags breaches naturally through a revealed
   hazard — same breach path as a direct reveal
 * revealing a hazard transitions phase to `breached`, renders remaining hazards
@@ -1459,3 +1491,134 @@ overflow-y: auto` so it scrolls internally on short viewports. Pixi's
 `resizeTo: host` already listens to the host element's size, so the
 board centers itself in the remaining width with no renderer changes
 needed. Not a design pass; no Canon changes.
+
+### 2026-04-24 — Claude Opus 4.7 (Constraint Closure Restoration)
+Replaced the confirm-based witness refund with Constraint Closure
+Restoration. The old refund worked mechanically but felt too free in
+real play — "click the chord → get a charge back" was becoming a
+ritual that rewarded button correctness rather than demonstrated
+understanding. The replacement anchors restoration on a board-state
+condition (local truth is fully stabilized), not on an action, so the
+economy reads as *the field recognizing closure* rather than *the UI
+granting relief*. Demoted three Canon sections. Verbatim:
+
+**Superseded — Stage:**
+> Reveal / flag / breach / clear loop under a finite **witness charge** budget
+> on a 24×24 / 99-hazard default field, with **Witness Confirmation** (chord)
+> for inference-rewarded claims, the **Witness Probe** (line scan) as the
+> first structural-scan instrument, a bounded **probe history** ledger that
+> preserves recent readings, **contradiction highlighting** — a proof-only
+> truth layer that marks any resolved numbered tile whose local
+> flag/unresolved counts make its constraint impossible to satisfy — and
+> **Protected Constraints v1** as a live experiment: a deterministic ~12%
+> fraction of safe numbered tiles reveal as "safe, but value sealed" and
+> require 1 witness charge to unveil the constraint number. Tiles are
+> `unresolved | resolved | flagged`, the run phase is `active | breached |
+> cleared`, the player has a finite pool of direct observations, they can
+> ask *about a region* rather than a tile, they can look back at the last
+> several such questions without a paper notebook, the field visibly refuses
+> to host impossibilities, and some tiles require an additional payment to
+> reveal their constraint after being proved safe. The identity loop now
+> includes "interpretation costs authority" — safety and legibility are
+> separable purchases. Next substantive foundation decisions: evaluating
+> whether hidden-value pressure changes the inference/payment ratio enough
+> to become canon, a deterministic replay buffer keyed off the action log,
+> a headless test harness, and the second probe geometry (row/column
+> signature or rectangular scan). Still foundation work — not progression,
+> metagame, or content.
+
+**Superseded — Witness Confirmation (chord):**
+> `confirm` targets a resolved numbered tile. If the count of adjacent
+> flags equals `tile.adjacentMines` AND at least one adjacent unresolved,
+> unflagged neighbor exists, every such neighbor is revealed (using the
+> same cascade core as `reveal`). If any revealed neighbor is a mine the
+> run breaches at that neighbor; otherwise the confirmation is
+> successful — `witness.charge` is incremented by 1 (capped at `max`) and
+> `witness.confirms` increments by 1. Refused confirmations (wrong tile
+> state, zero adjacency, flag-count mismatch, no unresolved neighbors,
+> breached phase) do not change state.
+
+**Superseded — visual-proof bullet (confirm restore):**
+> * a safe confirmation restores +1 charge (capped at max) and triggers a
+>   brief "witness confirmed · integrity restored" pill in the HUD, keyed
+>   off `witness.confirms` incrementing
+
+Output contract answers:
+
+1. **Files changed:** `src/types/index.ts` (added `Tile.closedForWitness`);
+   `src/engine/board.ts` (init `closedForWitness: false` in
+   `generateBoard`); `src/engine/state.ts` (added pure
+   `applyClosureRestoration` helper, routed `reveal`/`flag`/`confirm`/
+   `unveil` through it, removed the `+1 charge` line from the
+   confirm-safe branch, rewrote the confirm doc-comment);
+   `src/ui/HUD.tsx` (removed `witness.confirms`-keyed flash effect and
+   pill DOM, updated the hint-block line from "successful confirm
+   restores +1 charge" to "fully stabilizing a constraint restores +1
+   charge"); `src/styles.css` (deleted now-orphan `.hud-witness-restore*`
+   rules and the `hud-witness-restore-fade` keyframe). `DIRECTORS_NOTES.md`.
+
+2. **Closure detection (exact):** for each tile in row-major order, a
+   tile is a closure candidate iff all of:
+   - `state === 'resolved'` and `!isMine` and `adjacentMines > 0`
+   - not (`protected && !valueRevealed`)
+   - `!closedForWitness`
+   - Moore-neighbor counts: `adjacentFlags === tile.adjacentMines` AND
+     `adjacentUnresolved === 0`. In active phase this provably implies
+     every flag in the neighborhood covers a real mine (resolved mines
+     would have breached, and the unresolved set is empty), so "genuine
+     local stabilization" falls out of the two visible counts without
+     a separate `isMine`-aware pass. The scan runs only in active
+     phase.
+
+3. **Witness restoration (exact transition):** for each tile that
+   passes the detection, flip `closedForWitness` to `true` via a tile
+   spread — strictly monotonic, the candidate check excludes
+   already-closed tiles so flag churn cannot re-award. Accumulate a
+   `restored` counter and, if nonzero, rebuild `board.tiles` once and
+   return `witness = { ...witness, charge: min(max, charge + restored) }`.
+   If no tiles closed on this action, return the input state by
+   reference (no needless allocations). The cap is applied against
+   the total, so simultaneous multi-closure actions cannot push
+   charge above `max`.
+
+4. **Confirm behavior after the change:** confirm's acceptance gate is
+   unchanged (resolved numbered non-occluded target, flag count matches
+   constraint, ≥1 unresolved unflagged neighbor). Safe branch no
+   longer increments `witness.charge`; `witness.confirms` still
+   increments by 1. Breach branch is unchanged. The target tile is
+   by construction now a closure candidate (flags match, all former
+   unresolved neighbors are resolved by the confirm), so the +1 that
+   used to look like a confirm refund still typically arrives — but
+   via closure, one step removed from the click.
+
+5. **Contradiction / flag interaction:** contradictions never need a
+   special case. An over-flag has `flags > constraint`; an under-space
+   has `flags + unresolved < constraint`. Neither equals the closure
+   gate `flags === constraint && unresolved === 0`. So sloppy flagging
+   buys the operator exactly the economic cost the brief asked for —
+   no restoration until the contradiction is resolved — with no
+   explicit punishment branch. Flags become more valuable without
+   becoming mandatory: the player *can* play without flagging and burn
+   through the base charge budget, but disciplined flagging is how the
+   economy reopens.
+
+6. **Determinism preservation:** `applyClosureRestoration` is a pure
+   function of `GameState`, row-major over `board.tiles`, no RNG,
+   no clock, no DOM. The `closedForWitness` transition is strictly
+   monotonic (false→true only). No other new state enters the engine.
+   Same seed + same action log → same closures in the same order →
+   same charge trajectory, bit-identical. Replay buffer work remains
+   compatible.
+
+7. **Explicitly deferred:** on-board visual indicator of closed tiles;
+   HUD pill / popup / banner / counter for closure events (the design
+   is specifically quiet); variable reward by tile number; combo
+   system; achievement layer; closure telemetry / graphs; "peek at
+   occluded constraint without unveiling"; neighborhood-aware
+   closure scan (today it's full-board, cheap at 576 tiles); forced
+   closure on un-flag regression. Everything the brief forbade
+   (loadouts, breach save, progression, cathedral) remains deferred.
+   Open question for next pass: across a full run, does closure-only
+   restoration give the operator enough charge to finish, or does the
+   base budget need a small bump to compensate? Answer through play,
+   not modelling.
