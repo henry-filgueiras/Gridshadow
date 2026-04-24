@@ -7,6 +7,12 @@ interface HUDProps {
   probeMode: ProbeOrientation | null;
   hoveredHistoryIndex: number | null;
   onHistoryHover: (index: number | null) => void;
+  // Current-state contradiction count, derived once in GameView from the
+  // engine's `detectContradictions` selector and passed here so the HUD
+  // does not duplicate the scan. Zero means no provable impossibility in
+  // the revealed field; a positive count means that many resolved numbered
+  // tiles carry a halo on the board.
+  contradictionCount: number;
   onReseed: (seed: number) => void;
 }
 
@@ -22,6 +28,7 @@ export function HUD({
   probeMode,
   hoveredHistoryIndex,
   onHistoryHover,
+  contradictionCount,
   onReseed,
 }: HUDProps) {
   const { config } = state.board;
@@ -211,6 +218,17 @@ export function HUD({
           <span className="hud-label">confirms</span>
           <span className="hud-value">{confirms}</span>
         </div>
+        <div className="hud-row">
+          <span className="hud-label">contradictions</span>
+          <span
+            className={`hud-value ${
+              contradictionCount > 0 ? 'hud-value-contradiction' : ''
+            }`}
+            aria-live="polite"
+          >
+            {contradictionCount}
+          </span>
+        </div>
       </div>
 
       <div className="hud-divider" />
@@ -248,6 +266,7 @@ export function HUD({
           {PROBE_TUNABLES.cost} charge)
         </div>
         <div>esc — disarm probe</div>
+        <div>red halo — local constraint proven impossible</div>
       </div>
 
       <button

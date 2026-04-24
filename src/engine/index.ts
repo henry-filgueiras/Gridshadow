@@ -16,3 +16,8 @@ export {
   type TileTally,
   type WitnessStatus,
 } from './selectors';
+export {
+  detectContradictions,
+  type Contradiction,
+  type ContradictionKind,
+} from './contradiction';

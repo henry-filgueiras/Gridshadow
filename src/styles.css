@@ -152,6 +152,17 @@ body,
   letter-spacing: 0.1em;
 }
 
+.hud-value-contradiction {
+  color: #ff4655;
+  font-weight: bold;
+  animation: hud-contradiction-pulse 1.1s ease-in-out infinite;
+}
+
+@keyframes hud-contradiction-pulse {
+  0%, 100% { opacity: 0.7; }
+  50%      { opacity: 1; }
+}
+
 .hud-cleared {
   background: rgba(10, 30, 36, 0.85);
   border: 1px solid #7effff;

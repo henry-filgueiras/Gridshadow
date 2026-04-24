@@ -4,6 +4,7 @@ import {
   type FederatedPointerEvent,
   Graphics,
   Rectangle,
+  type TickerCallback,
   Text,
 } from 'pixi.js';
 import { probeSegment } from '../engine';
@@ -62,6 +63,18 @@ const COLOR_FLAG_GLYPH_STABILIZED = 0x7effff;
 // Inset (not overdraw) so the underlying fill and stroke remain readable;
 // the preview is instrumentation, not a selection state.
 const COLOR_PROBE_PREVIEW = 0x7effff;
+// Contradiction halo — a red stroke around a resolved numbered tile whose
+// local flag/unresolved counts make its adjacency constraint impossible to
+// satisfy. Different register from the probe preview: it's a truth claim
+// ("this cannot be true"), not instrumentation. Draws on its own layer so
+// the pulse animation does not repaint the whole tile grid every frame.
+const COLOR_CONTRADICTION = 0xff4655;
+// Pulse period chosen fast enough to read as a live warning, slow enough
+// to avoid casino-flash urgency. Alpha oscillates in [MIN, MAX] — never
+// fully fades, so the halo remains unmistakable even at trough.
+const CONTRADICTION_PULSE_PERIOD_MS = 1100;
+const CONTRADICTION_ALPHA_MIN = 0.55;
+const CONTRADICTION_ALPHA_MAX = 1.0;
 
 const GLYPH_FLAG = '⚑';
 const GLYPH_MINE = '●';
@@ -85,12 +98,28 @@ export interface RenderOverlay {
   // exactly what that probe scanned. Same visual language as the live probe
   // preview — this is "what did I learn?" projected back onto the field.
   readonly historyHighlight: ReadonlyArray<Coord> | null;
+  // Row-major `y * width + x` indices of resolved numbered tiles whose
+  // constraint cannot be satisfied from the current flag/unresolved layout.
+  // The engine's `detectContradictions` selector is the authority; the
+  // renderer only paints the halo. An empty set (or null) means no halos.
+  readonly contradictions: ReadonlySet<number> | null;
 }
 
 export class BoardRenderer {
   private readonly app: Application;
   private readonly events: BoardRendererEvents;
   private readonly root: Container;
+  // Dedicated overlay for contradiction halos. Sits above the tile root so
+  // the halo stroke draws over tile fills without obscuring the constraint
+  // glyph underneath. Geometry rebuilds only when the contradiction set
+  // changes; a ticker animates its alpha each frame for the pulse.
+  private readonly haloLayer: Graphics;
+  private readonly haloTicker: TickerCallback<BoardRenderer>;
+  private haloPulseT = 0;
+  // Cached key of the last-painted contradiction set, so we only rebuild
+  // the halo geometry when the set actually changes. Sorted comma-joined
+  // list of row-major indices — stable across renders that don't change it.
+  private lastContradictionKey = '';
   private tileBackgrounds: Graphics[] = [];
   private tileGlyphs: Text[] = [];
   private currentBoard: Board | null = null;
@@ -99,7 +128,31 @@ export class BoardRenderer {
     this.app = app;
     this.events = events;
     this.root = new Container();
+    this.haloLayer = new Graphics();
+    this.haloLayer.alpha = 0;
     this.app.stage.addChild(this.root);
+    this.app.stage.addChild(this.haloLayer);
+
+    // Pulse animation lives here, not in paint(), so we don't repaint the
+    // 256 tile graphics every frame just to animate a stroke alpha. The
+    // ticker is cheap — one sin() per tick on a layer with a handful of
+    // rects at most.
+    this.haloTicker = (ticker) => {
+      if (this.lastContradictionKey === '') {
+        if (this.haloLayer.alpha !== 0) this.haloLayer.alpha = 0;
+        return;
+      }
+      this.haloPulseT += ticker.deltaMS;
+      const phase =
+        (this.haloPulseT % CONTRADICTION_PULSE_PERIOD_MS) /
+        CONTRADICTION_PULSE_PERIOD_MS;
+      // 0 → 1 → 0 triangle mapped through cosine for smooth ease.
+      const eased = 0.5 - 0.5 * Math.cos(phase * Math.PI * 2);
+      this.haloLayer.alpha =
+        CONTRADICTION_ALPHA_MIN +
+        (CONTRADICTION_ALPHA_MAX - CONTRADICTION_ALPHA_MIN) * eased;
+    };
+    this.app.ticker.add(this.haloTicker, this);
   }
 
   render(state: GameState, overlay: RenderOverlay): void {
@@ -108,13 +161,17 @@ export class BoardRenderer {
       this.currentBoard = state.board;
     }
     this.paint(state, overlay);
+    this.paintHalos(state, overlay);
   }
 
   destroy(): void {
+    this.app.ticker.remove(this.haloTicker, this);
+    this.haloLayer.destroy();
     this.root.destroy({ children: true });
     this.tileBackgrounds = [];
     this.tileGlyphs = [];
     this.currentBoard = null;
+    this.lastContradictionKey = '';
   }
 
   private rebuildBoard(board: Board): void {
@@ -127,6 +184,16 @@ export class BoardRenderer {
     const pixelHeight = height * TILE_SIZE + (height - 1) * TILE_GAP;
     this.root.x = Math.round((this.app.screen.width - pixelWidth) / 2);
     this.root.y = Math.round((this.app.screen.height - pixelHeight) / 2);
+    // Halo layer rides the same origin as the tile grid, so halo geometry
+    // can be expressed in tile-local coordinates (parallel to rebuildBoard
+    // and paintHalos) rather than re-adding the board offset everywhere.
+    this.haloLayer.x = this.root.x;
+    this.haloLayer.y = this.root.y;
+    // Board rebuilt — old halo geometry no longer valid. Force a rebuild
+    // on the next paint cycle rather than paint into potentially-stale
+    // coordinate space.
+    this.haloLayer.clear();
+    this.lastContradictionKey = '';
 
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
@@ -343,5 +410,59 @@ export class BoardRenderer {
 
     if (glyph.text !== text) glyph.text = text;
     if (glyph.style.fill !== color) glyph.style.fill = color;
+  }
+
+  // Rebuild the halo layer's geometry iff the contradiction set changed.
+  // Geometry is a set of red-stroked rectangles, one per contradicting
+  // resolved numbered tile. Pulse animation is driven by the ticker
+  // installed in the constructor — this method only handles "which tiles".
+  private paintHalos(state: GameState, overlay: RenderOverlay): void {
+    const indices = overlay.contradictions;
+    // Derive a stable key so we can skip redraws when the contradiction set
+    // is unchanged across rapid-fire paints (e.g., probe-mode hover
+    // triggering a fresh render without any flag change).
+    let key = '';
+    if (indices && indices.size > 0) {
+      const sorted = Array.from(indices).sort((a, b) => a - b);
+      key = sorted.join(',');
+    }
+
+    if (key === this.lastContradictionKey) return;
+    this.lastContradictionKey = key;
+    this.haloLayer.clear();
+
+    if (key === '' || indices === null) {
+      this.haloLayer.alpha = 0;
+      return;
+    }
+
+    // Reset pulse phase on geometry change so a newly-created contradiction
+    // lights up near peak alpha rather than fading in from a random spot.
+    this.haloPulseT = 0;
+
+    const { width } = state.board.config;
+    for (const idx of indices) {
+      const x = idx % width;
+      const y = (idx / width) | 0;
+      const px = x * (TILE_SIZE + TILE_GAP);
+      const py = y * (TILE_SIZE + TILE_GAP);
+      // Two strokes stacked: an outer glow-ish rect at lower width for
+      // presence, and an inner sharp stroke for unmistakable edge. Both
+      // draw within the tile bounds so a halo at the field edge still
+      // renders fully — no bleed into the canvas margin.
+      this.haloLayer.rect(px - 1, py - 1, TILE_SIZE + 2, TILE_SIZE + 2);
+      this.haloLayer.stroke({
+        color: COLOR_CONTRADICTION,
+        width: 3,
+        alpha: 0.35,
+        alignment: 0.5,
+      });
+      this.haloLayer.rect(px, py, TILE_SIZE, TILE_SIZE);
+      this.haloLayer.stroke({
+        color: COLOR_CONTRADICTION,
+        width: 1.5,
+        alignment: 0,
+      });
+    }
   }
 }

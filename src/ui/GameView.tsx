@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { Application } from 'pixi.js';
-import { createGameState, reduceGame } from '../engine';
+import { createGameState, detectContradictions, reduceGame } from '../engine';
 import { BoardRenderer } from '../render';
 import type { BoardConfig, Coord, ProbeOrientation } from '../types';
 import { HUD } from './HUD';
@@ -51,6 +51,23 @@ export function GameView() {
     if (hoveredHistoryIndex === null) return null;
     return state.probeHistory[hoveredHistoryIndex]?.cells ?? null;
   }, [hoveredHistoryIndex, state.probeHistory]);
+
+  // Contradiction detection is a pure derivation over engine state — HUD
+  // readout and renderer halos both consume this single source. Memoized on
+  // the tiles array so flag/reveal changes invalidate, but cursor/hover
+  // updates don't re-scan. The renderer wants an O(1)-lookup set of
+  // row-major indices; the HUD wants the count.
+  const contradictions = useMemo(
+    () => detectContradictions(state),
+    [state],
+  );
+  const contradictionSet = useMemo(() => {
+    if (contradictions.length === 0) return null;
+    const w = state.board.config.width;
+    const s = new Set<number>();
+    for (const c of contradictions) s.add(c.at.y * w + c.at.x);
+    return s;
+  }, [contradictions, state.board.config.width]);
 
   // Probe mode auto-exits on terminal phase so the HUD indicator can't
   // persist past a run ending. Reseed enters active again with probe mode
@@ -147,6 +164,7 @@ export function GameView() {
       r.render(state, {
         probeMode: probeModeRef.current,
         historyHighlight: null,
+        contradictions: contradictionSet,
       });
     })();
 
@@ -162,8 +180,12 @@ export function GameView() {
   }, []);
 
   useEffect(() => {
-    rendererRef.current?.render(state, { probeMode, historyHighlight });
-  }, [state, probeMode, historyHighlight]);
+    rendererRef.current?.render(state, {
+      probeMode,
+      historyHighlight,
+      contradictions: contradictionSet,
+    });
+  }, [state, probeMode, historyHighlight, contradictionSet]);
 
   return (
     <div className="game-view">
@@ -178,6 +200,7 @@ export function GameView() {
         probeMode={probeMode}
         hoveredHistoryIndex={hoveredHistoryIndex}
         onHistoryHover={setHoveredHistoryIndex}
+        contradictionCount={contradictions.length}
         onReseed={(seed) => dispatch({ type: 'regen', seed })}
       />
     </div>

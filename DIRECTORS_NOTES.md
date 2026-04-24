@@ -12,18 +12,19 @@ archive with a new dated entry that supersedes it.
 
 ### Stage
 Reveal / flag / breach / clear loop under a finite **witness charge** budget,
-with **Witness Confirmation** (chord) for inference-rewarded claims and the
+with **Witness Confirmation** (chord) for inference-rewarded claims, the
 **Witness Probe** (line scan) as the first structural-scan instrument,
-backed by a bounded **probe history** ledger so the field's observations
-do not evaporate the moment the last reading is replaced. Tiles are
-`unresolved | resolved | flagged`, the run phase is
-`active | breached | cleared`, the player has a finite pool of direct
-observations, and they now have a second kind of observation available:
-spending extra charge to ask *about a region*, not about a tile — and they
-can look back at the last several such questions without relying on a
-paper notebook. The core identity pivot — "spend certainty to make claims
-*or* to ask a better question" — is now expressed in the rules, and the
-first cognitive-prosthetic layer is in place. Next substantive foundation
+a bounded **probe history** ledger that preserves recent readings, and
+**contradiction highlighting** — a proof-only truth layer that marks any
+resolved numbered tile whose local flag/unresolved counts make its
+constraint impossible to satisfy. Tiles are `unresolved | resolved |
+flagged`, the run phase is `active | breached | cleared`, the player has
+a finite pool of direct observations, they can ask *about a region* rather
+than a tile, they can look back at the last several such questions without
+a paper notebook, and the field now visibly refuses to host impossibilities.
+The core identity pivot — "spend certainty to make claims *or* to ask a
+better question, and the field tells you when your reading cannot be
+true" — is expressed end-to-end in the rules. Next substantive foundation
 decisions: a deterministic replay buffer keyed off the action log, a
 headless test harness, and the second probe geometry (row/column signature
 or rectangular scan) once we have one structural instrument in players'
@@ -131,6 +132,19 @@ excavation bill.
   — the renderer reads `historyHighlight` through its per-frame overlay,
   not through engine state — so replays of a given action log produce
   identical engine state regardless of which rows the player hovered.
+* **Contradiction selector**: `detectContradictions(state):
+  ReadonlyArray<Contradiction>` lives in `src/engine/contradiction.ts`
+  and is re-exported from the engine barrel. Pure derivation: for every
+  resolved numbered tile, counts flagged and unresolved Moore neighbors
+  and flags any tile where `adjacentFlags > adjacentConstraint`
+  (over-flag) or `adjacentFlags + adjacentUnresolved < adjacentConstraint`
+  (under-space). Truth only — no probability, no "recommended move", no
+  auto-fix, no multi-tile SAT-style inference. Suppressed in terminal
+  phases: breached fields already highlight mis-flags; cleared fields
+  cannot carry a contradiction by construction (every safe tile is
+  resolved, so every remaining flag is necessarily a hazard). The
+  selector is the single authority — HUD count and renderer halos both
+  consume its output, neither recomputes.
 * First-click safety is intentionally NOT implemented: the seed fully
   determines the board, so the first reveal can legitimately detonate.
   The player learning to read the field is the game.
@@ -166,12 +180,18 @@ under a witness budget:
   remaining hazards in a dormant cyan (also render-only — engine leaves them
   `unresolved`), recolors the stabilized field in a quiet cyan wash, and
   disables further pointer actions
+* resolved numbered tiles whose local flag / unresolved counts make their
+  constraint provably impossible gain a pulsing red halo drawn on a
+  dedicated Pixi layer above the tile grid; the HUD surfaces the same
+  count (pulsing red when nonzero), both driven by the single
+  `detectContradictions` engine selector
 * HUD shows witness charge with a meter and tiered coloring
   (steady → low at ≤25% or ≤3 remaining → exhausted at 0), confirmation
-  count, seed, field dims, hazard count, tile tallies, cursor, phase
-  (`active | breached | stabilized`), and a breach or stabilization banner
-  as applicable (the stabilization banner reads "field stabilized · witness
-  protocol complete")
+  count, contradiction count (pulsing red when nonzero), seed, field
+  dims, hazard count, tile tallies, cursor, phase (`active | breached |
+  stabilized`), and a breach or stabilization banner as applicable
+  (the stabilization banner reads "field stabilized · witness protocol
+  complete")
 * reseed regenerates a fresh active board, refills charge to max, and
   resets confirms to 0
 
@@ -996,3 +1016,178 @@ a highlight, any progression or metagame system. The brief continues
 to forbid shops, batteries, passive regen, inventory, backend,
 multiplayer, and campaign systems — still no cathedral. The notebook
 is built; the oracle is not.
+
+### 2026-04-24 — Claude Opus 4.7 (Contradiction Highlighting v1 — truth serum)
+Added a purely local contradiction layer — the first reasoning aid that
+makes *no* recommendation and offers *no* probability estimate, only
+proof. When a resolved numbered tile's Moore-neighbor flag count exceeds
+its adjacency constraint, or when flags plus remaining unresolved
+neighbors cannot reach the constraint, the tile gains a pulsing red halo
+and the HUD ticks up its contradiction count. The brief was explicit that
+this must never be "I think this is probably wrong" and must always be
+"this cannot be true" — and that distinction was treated as the single
+load-bearing design rule for the pass. Demoted two Canon entries: the
+Stage paragraph and the HUD visual-proof line. Verbatim:
+
+**Superseded — Stage:**
+> Reveal / flag / breach / clear loop under a finite **witness charge** budget,
+> with **Witness Confirmation** (chord) for inference-rewarded claims and the
+> **Witness Probe** (line scan) as the first structural-scan instrument,
+> backed by a bounded **probe history** ledger so the field's observations
+> do not evaporate the moment the last reading is replaced. Tiles are
+> `unresolved | resolved | flagged`, the run phase is
+> `active | breached | cleared`, the player has a finite pool of direct
+> observations, and they now have a second kind of observation available:
+> spending extra charge to ask *about a region*, not about a tile — and they
+> can look back at the last several such questions without relying on a
+> paper notebook. The core identity pivot — "spend certainty to make claims
+> *or* to ask a better question" — is now expressed in the rules, and the
+> first cognitive-prosthetic layer is in place. Next substantive foundation
+> decisions: a deterministic replay buffer keyed off the action log, a
+> headless test harness, and the second probe geometry (row/column signature
+> or rectangular scan) once we have one structural instrument in players'
+> hands to calibrate against. Still foundation work — not progression,
+> metagame, or content.
+
+**Superseded — Visual-proof HUD line:**
+> * HUD shows witness charge with a meter and tiered coloring
+>   (steady → low at ≤25% or ≤3 remaining → exhausted at 0), confirmation
+>   count, seed, field dims, hazard count, tile tallies, cursor, phase
+>   (`active | breached | stabilized`), and a breach or stabilization banner
+>   as applicable (the stabilization banner reads "field stabilized · witness
+>   protocol complete")
+
+Design notes for this pass:
+- **Two rules, no more.** Rule A (over-flag: `adjacentFlags >
+  adjacentConstraint`) and Rule B (under-space: `adjacentFlags +
+  adjacentUnresolved < adjacentConstraint`) — both are strictly local,
+  strictly provable, strictly one-constraint-per-decision. No multi-tile
+  inference, no SAT solver, no subset-deduction. The brief carved out
+  space for either class to grow, but both must clear a sharp bar:
+  *from the local state alone, no assignment of mines satisfies the
+  constraint.* Anything requiring cross-tile reasoning is inference,
+  not contradiction, and belongs to a later pass (if ever).
+- **Zero-adjacency tiles don't anchor contradictions.** A resolved
+  numbered tile with `adjacentMines === 0` can still be surrounded by a
+  misplaced flag, but the proof anchor — the number on the tile — is
+  missing. The correct place to surface that error is on whichever
+  adjacent *numbered* tile is over-flagged; anchoring the halo on a
+  blank tile would be visually confusing (no constraint to read) and
+  theoretically muddled. Skip them.
+- **Terminal-phase suppression.** Breached and cleared fields both
+  drop detection. On breach, the mis-flag already has its own red
+  tint; stacking a halo on top would double the visual language. On
+  clear, the selector's output is definitionally empty (every safe
+  tile is resolved ⇒ every remaining flag is a hazard ⇒ no under-space
+  or over-flag can hold), so suppression is also a cheap short-circuit
+  that avoids scanning the board one last time.
+- **Selector, not engine state.** Contradictions are a *derivation*,
+  like `tallyTiles` — a function of the current board, not something
+  the reducer maintains incrementally. Same reasoning as the tile
+  tally: an incremental store would be a second source of truth and a
+  sync-bug farm, and the O(tiles) scan is negligible at 16×16 and
+  still cheap at much larger fields. A replay reading the same action
+  log reproduces the same contradiction set on the same seed without
+  any extra bookkeeping, because the selector is pure over `Board +
+  flags`.
+- **HUD and renderer consume one selector, never two.** The previous
+  draft briefly considered having the renderer compute its halo set
+  from a tighter "indices with contradictions" helper while the HUD
+  called the full selector. That is the precise failure mode the brief
+  warned against — "do not make renderer independently guess". The
+  current architecture runs `detectContradictions(state)` once in
+  `GameView`, derives a `Set<number>` of row-major indices for the
+  renderer, and passes `contradictions.length` to the HUD. Two
+  consumers, one truth.
+- **Halo on its own Pixi layer.** The halo sits on a dedicated
+  `Graphics` added to the stage above the tile root. Repainting 256
+  tile backgrounds every frame to animate an alpha value would be
+  absurd; the halo layer's alpha is driven by a single ticker callback
+  that runs independently of the normal `render()` cycle. Geometry on
+  the layer is only rebuilt when the contradiction set actually
+  changes (keyed by the sorted, comma-joined index list), so rapid
+  probe-mode hover events don't thrash the halo layer even though they
+  trigger full renderer paints.
+- **Pulse is a cosine ease, alpha in [0.55, 1.0].** Period ≈ 1.1 s.
+  Chosen so the halo is readable as a *live warning* — not a static
+  outline, not a flash. The min alpha never drops below 0.55 because
+  the brief was explicit that the mark must be unmistakable at all
+  times; fading to transparent mid-pulse would be casino flashing, not
+  a truth anchor. Time accumulates on `ticker.deltaMS`, independent of
+  frame rate, so a low-FPS session still pulses at the same cadence.
+- **Pulse phase resets when the contradiction set changes.** If the
+  operator creates a new contradiction (e.g., by placing a 4th flag
+  around a "3"), the newly-added tile's halo should light up
+  immediately, not enter at a low-alpha trough in the middle of a
+  pulse cycle. Zeroing `haloPulseT` on geometry change hands the
+  operator an instant "you just broke the constraint" signal.
+- **Halo geometry: stacked outer-glow + inner-stroke.** A width-3
+  outer stroke at alpha 0.35 plus a width-1.5 inner stroke at full
+  alpha. The double-stroke reads as a *marked* tile, not a *selected*
+  tile — selection language in the UI (like the probe preview) is
+  cyan and inset; contradiction language is red and outset. Those
+  two registers must not collide, because a player with both a probe
+  preview and a contradiction on the same tile needs to see both
+  meanings independently. A future self-test: if the two outlines
+  become ambiguous, the contradiction halo is what should win.
+- **HUD readout, no banner.** The brief explicitly said "Do not add
+  scoreboards yet. Just current-state observability." A contradiction
+  count sits as a single row in the same tally section as confirms
+  and tile tallies, styled normally when zero and pulsing red when
+  nonzero. No modal, no top banner, no urgency klaxon — the board's
+  halos are the operator-visible *event*; the HUD row is the
+  *aggregate*. The `aria-live="polite"` announcement lets screen
+  readers surface a count change without interrupting other output.
+- **Flag-ring for contradicting flags deferred.** The brief marked
+  this optional and conditional on "naturally easy". It is not
+  naturally easy without over-engineering the renderer's per-tile
+  paint path (contradiction origin has to thread into `paintTile` to
+  decide which flags participate in a given resolved tile's
+  contradiction), and the required truth anchor — the numbered tile
+  — is already doing the work. If a later pass wants it, the selector
+  already carries `adjacentFlags` per `Contradiction`, so the
+  geometry is derivable without any change to the engine surface.
+- **No refusal feedback.** If the operator creates and then immediately
+  fixes a contradiction (place a bad flag, notice the halo, un-flag),
+  the halo simply vanishes on the next render. No "contradiction
+  resolved" pill, no celebratory flash. The whole point of a truth
+  layer is that it reports status, not ceremony — it's doing its job
+  most loudly when it's silent.
+
+Files changed this pass:
+- `src/engine/contradiction.ts` — new file. `Contradiction` /
+  `ContradictionKind` types and the pure `detectContradictions(state)`
+  selector.
+- `src/engine/index.ts` — re-exported `detectContradictions` and its
+  types.
+- `src/render/BoardRenderer.ts` — imported `TickerCallback`; added
+  `COLOR_CONTRADICTION`, `CONTRADICTION_PULSE_PERIOD_MS`, and alpha
+  bounds; extended `RenderOverlay` with `contradictions:
+  ReadonlySet<number> | null`; added a dedicated `haloLayer` Graphics
+  sibling of the tile root, a `haloTicker` callback that animates
+  alpha on `app.ticker`, a `paintHalos` method keyed on the sorted
+  index set so geometry rebuilds only when it changes, and halo
+  teardown on `destroy()`. `rebuildBoard` syncs halo layer position
+  and clears the cached key so a new board paints fresh halos.
+- `src/ui/GameView.tsx` — imported `detectContradictions`; added
+  memoized contradiction list and row-major index set; passed the
+  index set through to the renderer's overlay on both the init path
+  and the per-state effect; passed the count to the HUD.
+- `src/ui/HUD.tsx` — added `contradictionCount` prop; added a
+  `contradictions` row styled with `hud-value-contradiction` when
+  nonzero; added a hint line ("red halo — local constraint proven
+  impossible").
+- `src/styles.css` — added `.hud-value-contradiction` with a slow
+  opacity pulse keyframe matching the halo's cadence in register.
+
+Explicitly deferred (carried forward): probability hints, "recommended
+move" logic, guess-detection, contradiction auto-fix, multi-tile /
+subset / SAT-style inference, a telemetry or replay system, a dedicated
+contradiction banner or audio cue, an adjacent-flag warning ring,
+refusal / resolution ceremony, row/column signature probes, 3×3 block
+probes, additional probe geometries generally, a replay viewer keyed
+off the action log, a headless test harness, and any progression or
+metagame system. The brief continues to forbid shops, batteries,
+passive regen, inventory, backend, multiplayer, and campaign systems
+— still no cathedral. The player now has a truth serum. They do not
+yet have an oracle, and will not get one.
