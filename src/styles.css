@@ -782,3 +782,193 @@ body,
   font-variant-numeric: tabular-nums;
   color: #c7d1db;
 }
+
+/* Trace Overlay v1 — additive layers on the resolved curve. The
+   primary curve keeps its existing styling above; everything below is
+   a secondary signal and is muted accordingly so the hero line still
+   wins. */
+.run-summary-graph-charge {
+  stroke: #6fa8b5;
+  stroke-width: 1;
+  stroke-dasharray: 3 2;
+  opacity: 0.7;
+  vector-effect: non-scaling-stroke;
+}
+
+.run-summary-graph-contradiction {
+  fill: #ff4655;
+  stroke: rgba(255, 70, 85, 0.45);
+  stroke-width: 0.8;
+}
+
+.run-summary-graph-breach-line {
+  stroke: #ff4655;
+  stroke-width: 1;
+  stroke-dasharray: 2 2;
+  opacity: 0.75;
+}
+
+.run-summary-graph-breach-glyph {
+  fill: #ff4655;
+  font-family: inherit;
+  font-size: 8px;
+  font-weight: bold;
+}
+
+/* Pip lanes — closure (green/cyan), unveil (cool magenta), probe
+   (cyan). Each is a thin vertical tick at the appropriate step.
+   stroke-linecap: square keeps tiny ticks crisp at this scale. */
+.run-summary-graph-pip-closure {
+  stroke: #7effb0;
+  stroke-width: 1.4;
+  stroke-linecap: square;
+  opacity: 0.85;
+}
+
+.run-summary-graph-pip-unveil {
+  stroke: #c690ff;
+  stroke-width: 1.4;
+  stroke-linecap: square;
+  opacity: 0.85;
+}
+
+.run-summary-graph-pip-probe {
+  stroke: #7effff;
+  stroke-width: 1.4;
+  stroke-linecap: square;
+  opacity: 0.85;
+}
+
+/* Scrubber overlay rect — invisible but interactive. cursor: crosshair
+   hints at the inspector affordance on desktop; touch users get the
+   same behavior on tap. */
+.run-summary-graph-overlay {
+  fill: transparent;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.run-summary-graph-scrub-guide {
+  stroke: #7effff;
+  stroke-width: 1;
+  stroke-dasharray: 1 2;
+  opacity: 0.55;
+}
+
+.run-summary-graph-scrub-bg {
+  fill: rgba(8, 14, 20, 0.95);
+  stroke: #2d3a48;
+  stroke-width: 1;
+}
+
+.run-summary-graph-scrub-step {
+  fill: #7effff;
+  font-family: inherit;
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.run-summary-graph-scrub-line {
+  fill: #c7d1db;
+  font-family: inherit;
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+}
+
+.run-summary-graph-scrub-meta {
+  fill: #5a6d80;
+  font-family: inherit;
+  font-size: 8px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* Trace legend — one tight row beneath the graph. Each item carries a
+   color hint via a leading glyph or its own text color. Wrap on narrow
+   viewports rather than scrolling. */
+.run-summary-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin-bottom: 8px;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.run-summary-legend-item {
+  font-variant-numeric: tabular-nums;
+}
+
+.run-summary-legend-resolved {
+  color: #7effff;
+}
+
+.run-summary-breached .run-summary-legend-resolved {
+  color: #ff7e85;
+}
+
+.run-summary-legend-charge {
+  color: #6fa8b5;
+}
+
+.run-summary-legend-contra {
+  color: #ff4655;
+}
+
+.run-summary-legend-closure {
+  color: #7effb0;
+}
+
+.run-summary-legend-unveil {
+  color: #c690ff;
+}
+
+.run-summary-legend-probe {
+  color: #7effff;
+}
+
+/* Copy-trace button. Sits beneath the stat block. Idle is a quiet
+   panel-style button; success briefly shifts cyan; failure shifts to
+   the breach palette so a clipboard denial reads loudly enough to be
+   noticed. */
+.run-summary-copy {
+  margin-top: 10px;
+  width: 100%;
+  padding: 6px 10px;
+  background: #112030;
+  color: #c7d1db;
+  border: 1px solid #2d3a48;
+  border-radius: 3px;
+  font: inherit;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.run-summary-copy:hover {
+  background: #183148;
+  border-color: #4a6b8a;
+}
+
+.run-summary-copy:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.run-summary-copy-ok {
+  border-color: #7effff;
+  color: #7effff;
+  background: rgba(126, 255, 255, 0.08);
+}
+
+.run-summary-copy-err {
+  border-color: #ff4655;
+  color: #ff4655;
+  background: rgba(255, 70, 85, 0.08);
+}

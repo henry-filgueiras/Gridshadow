@@ -182,4 +182,122 @@ export function resolvedCurvePoints(
   return out;
 }
 
+// Trace Overlay v1 — densifies the resolved-curve graph with the rest of
+// the ledger's signal. All output is pure derivation over `state.runHistory`
+// and `state.witness.max`; the renderer just plots whatever it gets back.
+//
+// Channels:
+// * `chargePoints` — witness charge / max as a fraction in [0, 1] over
+//   step. A synthetic `step: 0, fraction: 1` is prepended so the line
+//   starts at "full" rather than mid-air, matching the resolved curve's
+//   synthetic floor.
+// * `contradictionSteps` — steps at which `contradictionCount` rose
+//   above the previous entry. A spike of new contradictions is more
+//   forensically interesting than a long plateau; we mark the rising
+//   edge only.
+// * `probeSteps` / `unveilSteps` — every step whose action was that
+//   kind. Plotted as baseline pips so frequent probing doesn't crowd the
+//   curves themselves.
+// * `closureSteps` — steps at which Constraint Closure Restoration
+//   fired ≥ 1 time, detected by post-action charge being higher than
+//   `(prev - cost(action))`. Cap-absorbed closures (charge already at
+//   max when the event fired) are not detectable from the ledger alone
+//   and are treated as silent — a known false-negative in the rare
+//   "ticking up against the cap" case, accepted because a per-entry
+//   `closedCount` would balloon the row width for a corner case.
+// * `breachStep` — first step at which `phase === 'breached'`, mirrored
+//   from the existing `runSummary` derivation so callers can reuse it
+//   without re-scanning.
+//
+// The witness charge `max` is carried alongside so the renderer can
+// label the right axis without dipping into engine state for a second
+// concern.
+export interface RunTrace {
+  readonly chargePoints: ReadonlyArray<{ readonly step: number; readonly fraction: number }>;
+  readonly contradictionSteps: ReadonlyArray<number>;
+  readonly probeSteps: ReadonlyArray<number>;
+  readonly unveilSteps: ReadonlyArray<number>;
+  readonly closureSteps: ReadonlyArray<number>;
+  readonly breachStep: number | null;
+  readonly witnessMax: number;
+}
+
+// Effectful action charge cost, mirroring the reducer. Kept private to
+// the selector so it cannot drift out of sync with the gameplay rules
+// without the type-checker noticing.
+function actionCost(action: RunLedgerEntry['action']): number {
+  switch (action) {
+    case 'reveal':
+      return 1;
+    case 'unveil':
+      return 1;
+    case 'probe':
+      return 2;
+    case 'flag':
+      return 0;
+    case 'confirm':
+      return 0;
+  }
+}
+
+export function runTracePoints(state: GameState): RunTrace {
+  const ledger = state.runHistory;
+  const witnessMax = state.witness.max;
+  if (ledger.length === 0) {
+    return {
+      chargePoints: [],
+      contradictionSteps: [],
+      probeSteps: [],
+      unveilSteps: [],
+      closureSteps: [],
+      breachStep: null,
+      witnessMax,
+    };
+  }
+
+  const chargePoints: { step: number; fraction: number }[] = [
+    { step: 0, fraction: witnessMax > 0 ? 1 : 0 },
+  ];
+  const contradictionSteps: number[] = [];
+  const probeSteps: number[] = [];
+  const unveilSteps: number[] = [];
+  const closureSteps: number[] = [];
+  let breachStep: number | null = null;
+
+  let prevCharge = witnessMax;
+  let prevContradictions = 0;
+  for (const e of ledger) {
+    chargePoints.push({
+      step: e.step,
+      fraction: witnessMax > 0 ? e.witnessCharge / witnessMax : 0,
+    });
+    if (e.contradictionCount > prevContradictions) {
+      contradictionSteps.push(e.step);
+    }
+    if (e.action === 'probe') probeSteps.push(e.step);
+    if (e.action === 'unveil') unveilSteps.push(e.step);
+    // Closure fires when post-action charge exceeds (prev - action cost).
+    // The spend has already been deducted by the time this entry was
+    // appended, so any positive delta from that floor is restored
+    // charge — i.e. ≥ 1 closure tile banked.
+    if (e.witnessCharge > prevCharge - actionCost(e.action)) {
+      closureSteps.push(e.step);
+    }
+    if (breachStep === null && e.phase === 'breached') breachStep = e.step;
+
+    prevCharge = e.witnessCharge;
+    prevContradictions = e.contradictionCount;
+  }
+
+  return {
+    chargePoints,
+    contradictionSteps,
+    probeSteps,
+    unveilSteps,
+    closureSteps,
+    breachStep,
+    witnessMax,
+  };
+}
+
 export type { RunLedgerEntry };

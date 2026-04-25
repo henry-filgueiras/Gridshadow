@@ -5,6 +5,7 @@ import type {
   GameState,
   ProbeOrientation,
   RunAction,
+  RunActionInput,
   RunLedgerEntry,
   Tile,
 } from '../types';
@@ -75,9 +76,17 @@ export function reduceGame(state: GameState, action: GameAction): GameState {
     case 'reveal':
     case 'flag':
     case 'confirm':
-    case 'probe':
     case 'unveil':
-      return appendLedgerEntry(next, action.type);
+      return appendLedgerEntry(next, action.type, {
+        x: action.x,
+        y: action.y,
+      });
+    case 'probe':
+      return appendLedgerEntry(next, 'probe', {
+        x: action.x,
+        y: action.y,
+        orientation: action.orientation,
+      });
     default:
       return next;
   }
@@ -120,7 +129,11 @@ function reduceInner(state: GameState, action: GameAction): GameState {
 // never count toward progress. `totalResolvable` is the board-intrinsic
 // non-mine count; passed through every entry (rather than derived later)
 // so the ledger is self-describing and replay diffs are trivial.
-function appendLedgerEntry(state: GameState, action: RunAction): GameState {
+function appendLedgerEntry(
+  state: GameState,
+  action: RunAction,
+  input: RunActionInput,
+): GameState {
   let resolvedCount = 0;
   let flaggedCount = 0;
   let totalResolvable = 0;
@@ -135,6 +148,7 @@ function appendLedgerEntry(state: GameState, action: RunAction): GameState {
   const entry: RunLedgerEntry = {
     step: state.runHistory.length + 1,
     action,
+    input,
     resolvedCount,
     totalResolvable,
     flaggedCount,

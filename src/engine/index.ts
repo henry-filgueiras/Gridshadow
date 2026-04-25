@@ -14,11 +14,13 @@ export {
   protectedTally,
   resolvedCurvePoints,
   runSummary,
+  runTracePoints,
   tallyTiles,
   witnessStatus,
   type ProtectedTally,
   type ResolvedCurvePoint,
   type RunSummary,
+  type RunTrace,
   type TileTally,
   type WitnessStatus,
 } from './selectors';

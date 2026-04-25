@@ -109,9 +109,24 @@ export type RunAction = 'reveal' | 'flag' | 'confirm' | 'probe' | 'unveil';
 
 export type RunPhase = 'active' | 'breached' | 'cleared';
 
+// The input that produced a ledger entry — coords for every effectful
+// action, plus orientation for probes. Carrying this here promotes the
+// ledger from a *summary* trace (counts only) to a *replay* trace: the
+// same seed + the same ledger reproduces the same run because a consumer
+// can rebuild a GameAction stream from `(action, input)` pairs. The shape
+// is structurally narrow on purpose — no `type` field, since
+// `RunLedgerEntry.action` already discriminates — so the JSON export
+// stays compact.
+export interface RunActionInput {
+  readonly x: number;
+  readonly y: number;
+  readonly orientation?: ProbeOrientation;
+}
+
 export interface RunLedgerEntry {
   readonly step: number;
   readonly action: RunAction;
+  readonly input: RunActionInput;
   readonly resolvedCount: number;
   readonly totalResolvable: number;
   readonly flaggedCount: number;

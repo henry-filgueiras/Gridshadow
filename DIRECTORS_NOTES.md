@@ -35,33 +35,42 @@ column layout under 720 CSS px, board auto-scaled to fit, viewport-aware
 initial board defaults — desktop boots into 24×24 / 99 / 18, narrow
 viewports boot into 16×16 / 40 / 12 — selected once at module load so
 resize and reseed never mutate an active run, and no separate mobile
-codepath), and **Run Timeline Ledger v1 + Post-Run Resolved Curve** —
+codepath), **Run Timeline Ledger v1 + Post-Run Resolved Curve** —
 the engine-owned forensic record of every effectful action in the
-current run (step, action kind, resolved non-mine count, flagged count,
-post-action witness charge, contradiction count, phase) plus a
-post-run summary panel whose hero graph is resolved-% over step count,
-inline SVG, one polyline, no chart library, no medals, no score. Tiles
-are `unresolved | resolved | flagged`, the run phase is
-`active | breached | cleared`, the player has a finite pool of direct
-observations, they can ask *about a region* rather than a tile, they
-can look back at the last several such questions without a paper
-notebook, the field visibly refuses to host impossibilities, some
+current run (step, action kind, action input, resolved non-mine count,
+flagged count, post-action witness charge, contradiction count, phase)
+plus a post-run summary panel whose hero graph is resolved-% over step
+count, inline SVG, no chart library, no medals, no score, and **Trace
+Overlay v1 + Step Inspector + Trace Share** — additive forensic layers
+on that same panel: a witness-charge polyline, a breach marker, rising-
+edge contradiction dots, and three baseline pip lanes (closure / unveil
+/ probe) all derived purely from the ledger via `runTracePoints`; a
+hover-or-tap step inspector that surfaces step / action / resolved% /
+charge / contradictions / phase for any ledger entry without affecting
+engine state; and a `copy trace` clipboard button that emits
+`{ schemaVersion, seed, config, ledger, summary }` JSON, replay-grade
+because every ledger entry now carries its action's input coord (and
+orientation, on probes). Tiles are `unresolved | resolved | flagged`,
+the run phase is `active | breached | cleared`, the player has a finite
+pool of direct observations, they can ask *about a region* rather than a
+tile, they can look back at the last several such questions without a
+paper notebook, the field visibly refuses to host impossibilities, some
 tiles require an additional payment to reveal their constraint after
 being proved safe, authority returns only when the field actually
 stabilizes, and — once the run ends — the board *remembers what
-happened*: the same seed + same action log reproduces the same ledger
-and the same resolved curve, replay-truth, no runtime clocks. The
+happened*: the same seed + same action log reproduces the same ledger,
+the same overlays, and the same scrubbable history; replay-truth, no
+runtime clocks, and the artifact is shareable as compact JSON. The
 identity loop now reads: safety and legibility are separate purchases,
 restoration is earned by demonstrated understanding rather than button
-correctness, and a finished run is a readable artifact rather than a
-one-bit win/loss. Next substantive foundation decisions: layering
-additional traces onto the resolved curve (witness-charge line,
-contradiction markers, probe markers, breach marker, closure pips), a
-headless test harness that consumes the action log to reproduce
-ledgers bit-for-bit, the second probe geometry (row/column signature
-or rectangular scan), and evaluating whether closure-only restoration
-tightens the economy enough to become canon over a full run. Still
-foundation work — not progression, metagame, or content.
+correctness, and a finished run is a readable, replayable artifact
+rather than a one-bit win/loss. Next substantive foundation decisions:
+a headless test harness that consumes the trace JSON to reproduce
+ledgers bit-for-bit, a paste-trace replay player that re-drives the
+reducer from a copied trace, the second probe geometry (row/column
+signature or rectangular scan), and evaluating whether closure-only
+restoration tightens the economy enough to become canon over a full
+run. Still foundation work — not progression, metagame, or content.
 
 ### Stack
 * **Language:** TypeScript (strict, `verbatimModuleSyntax`).
@@ -220,25 +229,51 @@ excavation bill.
   oldest-first ledger of every *effectful* action in the current run.
   Each `RunLedgerEntry` carries `step` (1-based monotonic index,
   `runHistory.length + 1` at the moment of append), `action` (one of
-  `reveal | flag | confirm | probe | unveil`), `resolvedCount` (non-mine
-  tiles in state `resolved` — the detonating mine at breach is
-  deliberately excluded because it isn't progress), `totalResolvable`
-  (invariant non-mine tile count for this board, carried in every entry
-  so the ledger is self-describing), `flaggedCount`, `witnessCharge`
-  (post-action), `contradictionCount` (post-action, via
-  `detectContradictions`), and `phase` (`active | breached | cleared`,
-  the discriminator string only — full breach coord stays on
-  `state.phase`). Append rule: the outer `reduceGame` checks
-  reference-inequality against the inner reducer's result (refused
-  no-ops already return `state`) and appends an entry iff `action.type`
-  is one of the five effectful kinds. `hover` and `hoverClear` are UI-
-  state only — they change `cursor` but never the ledger. `regen`
+  `reveal | flag | confirm | probe | unveil`), `input` (the action's
+  target — `{x, y}` for every effectful kind plus `orientation` on
+  probes; structurally narrow with no `type` field because `action`
+  already discriminates), `resolvedCount` (non-mine tiles in state
+  `resolved` — the detonating mine at breach is deliberately excluded
+  because it isn't progress), `totalResolvable` (invariant non-mine
+  tile count for this board, carried in every entry so the ledger is
+  self-describing), `flaggedCount`, `witnessCharge` (post-action),
+  `contradictionCount` (post-action, via `detectContradictions`), and
+  `phase` (`active | breached | cleared`, the discriminator string
+  only — full breach coord stays on `state.phase`). The `input` field
+  promotes the ledger from a *summary* trace (counts only) to a
+  *replay* trace: a consumer can rebuild a `GameAction` stream from
+  `(action, input)` pairs and re-drive the reducer against the same
+  seed to reproduce the run bit-for-bit. Append rule: the outer
+  `reduceGame` checks reference-inequality against the inner reducer's
+  result (refused no-ops already return `state`) and appends an entry
+  iff `action.type` is one of the five effectful kinds, sourcing
+  `input` from the action object itself. `hover` and `hoverClear` are
+  UI-state only — they change `cursor` but never the ledger. `regen`
   resets the whole run via `createGameState`, which initializes
   `runHistory: []` — old-run noise cannot bleed into a fresh run, and
   `regen` is never itself recorded as an entry. Same seed + same
   action log → bit-identical ledger, always; the engine is still
   forbidden from reading `Date.now` / `performance.now`, and the
   ledger's X-axis is action step count, not wall clock.
+* **Trace Overlay selector** (`runTracePoints`): pure derivation over
+  `state.runHistory` and `state.witness.max`. Returns `chargePoints`
+  (witness-charge / max polyline data with a synthetic step-0 anchor
+  at fraction 1, mirroring how `resolvedCurvePoints` anchors at
+  fraction 0), `contradictionSteps` (rising-edge marker steps where
+  `contradictionCount` rose above the prior entry — plateaus and
+  resolutions are intentionally silent), `probeSteps` / `unveilSteps`
+  (every step of that action kind, for baseline pips), `closureSteps`
+  (steps where Constraint Closure Restoration banked ≥ 1 charge,
+  detected by `witnessCharge > prev - cost(action)` where action cost
+  is the same private table the reducer uses; cap-absorbed closures at
+  full charge are treated as silent — a known false-negative documented
+  in the selector), `breachStep` (mirrored from `runSummary` so callers
+  can reuse it without re-scanning), and `witnessMax` (carried so the
+  graph renderer can label the right axis without dipping back into
+  engine state for a second concern). Renderer-side overlays read this
+  output verbatim — no per-frame recomputation in the UI. Same
+  determinism contract as every other selector: same ledger → same
+  trace.
 * **Contradiction selector**: `detectContradictions(state):
   ReadonlyArray<Contradiction>` lives in `src/engine/contradiction.ts`
   and is re-exported from the engine barrel. Pure derivation: for every
@@ -351,9 +386,26 @@ viewports:
   restorations, contradiction peak, final witness charge, and — on
   breach — the step at which breach fired. The panel uses the same red
   palette as the breach banner on loss and the cyan palette of the
-  stabilized banner on clear; no medals, no score, no leaderboard. One
-  polyline, two axis lines, one 50% gridline. The curve's replay-truth
-  comes from `runHistory`; the panel is pure derivation
+  stabilized banner on clear; no medals, no score, no leaderboard. The
+  graph carries the **Trace Overlay v1** layers on top of the resolved
+  curve: a paler dashed witness-charge polyline, a dashed vertical
+  breach-step rule with a tiny ✕ glyph, small red dots at rising-edge
+  contradiction steps, and three baseline pip lanes (closure / unveil /
+  probe), all sourced from `runTracePoints`. A transparent overlay rect
+  over the plot region wires up the **Step Inspector**: hover (or tap)
+  to reveal a vertical guide and an inside-SVG tooltip showing
+  `step N · {action}`, resolved %, charge, contradictions, and phase
+  for the snapped ledger entry. A small one-row legend beneath the graph
+  names each trace channel by color. Hover state is UI-only and does
+  not enter engine state — replays of the same action log produce
+  identical engine snapshots regardless of where the operator scrubbed.
+  At the bottom of the panel sits a **copy trace** button that writes
+  `{ schemaVersion, seed, config, ledger, summary }` JSON to the
+  clipboard; success briefly tints the button cyan, failure tints it
+  red. Clipboard is the channel — no localStorage, no backend; the
+  trace is replay-grade because each ledger entry now carries its
+  action input. The curve's replay-truth still comes from
+  `runHistory`; the whole panel is pure derivation
 * reseed regenerates a fresh active board, refills charge to max,
   resets confirms to 0, and clears the ledger
 * layout is responsive: above 720 CSS px viewport width the board sits
@@ -2193,3 +2245,174 @@ Design notes for this pass:
     the reducer from an action log (the determinism contract now
     exists; the consumer of it does not). The brief named most of
     these as forbidden and we held the line.
+
+### 2026-04-25 — Claude Opus 4.7 (Trace Overlay v1 + Step Inspector + Trace Share)
+Densified the post-run summary panel with the rest of the ledger's
+signal. Three additive layers, no engine identity drift:
+
+1. **Trace Overlay v1** — secondary curves and event markers on the
+   existing resolved-curve graph: a paler dashed witness-charge
+   polyline, a dashed vertical breach-step rule, small red dots at
+   rising-edge contradiction steps, and three baseline pip lanes
+   (closure / unveil / probe). All sourced from a new pure
+   `runTracePoints(state)` selector on `state.runHistory` plus
+   `state.witness.max`.
+2. **Step Inspector** — a transparent overlay rect over the plot
+   region wires up hover/tap scrubbing. Snaps to the nearest ledger
+   step and surfaces an inside-SVG tooltip showing
+   `step N · {action}`, resolved %, charge, contradictions, and phase.
+   UI-only React state — replays of the same action log produce
+   identical engine snapshots regardless of where the operator
+   scrubbed, matching the discipline established by `historyHighlight`.
+3. **Trace Share** — a `copy trace` button under the stat block
+   writes `{ schemaVersion, seed, config, ledger, summary }` JSON to
+   the clipboard. The export is replay-grade because every
+   `RunLedgerEntry` now carries an `input` field (`{x, y}` for every
+   effectful action plus `orientation` on probes), so a future
+   consumer can rebuild a `GameAction` stream and re-drive the
+   reducer to reproduce the run bit-for-bit.
+
+Replaced-in-place Canon: the **Stage** paragraph and the post-run
+summary bullet inside **What the visual proof does**. Both superseded
+versions are archived verbatim below. Engine surface was extended
+additively — `RunLedgerEntry` gained one field; a new `runTracePoints`
+selector and a new `RunActionInput` type appear alongside the
+existing exports — so no older engine bullets were demoted this pass.
+
+**Superseded — Stage:**
+> Reveal / flag / breach / clear loop under a finite **witness charge** budget
+> on a viewport-selected default field — 24×24 / 99 hazards / 18 charges on
+> desktop, 16×16 / 40 hazards / 12 charges on phones (selected once at
+> module load via `(max-width: 768px)` matchMedia, frozen for the run) —
+> with **Witness Confirmation** (chord)
+> for inference-rewarded claims, the **Witness Probe** (line scan) as the
+> first structural-scan instrument, a bounded **probe history** ledger that
+> preserves recent readings, **contradiction highlighting** — a proof-only
+> truth layer that marks any resolved numbered tile whose local
+> flag/unresolved counts make its constraint impossible to satisfy —
+> **Protected Constraints v1** as a live experiment where a deterministic
+> ~12% fraction of safe numbered tiles reveal as "safe, but value sealed"
+> and require 1 witness charge to unveil the constraint number,
+> **Constraint Closure Restoration** — the authority-return layer, where
+> witness charge comes back to the operator when a resolved numbered tile
+> becomes locally fully stabilized (flags match its constraint, no adjacent
+> tile remains unresolved), strictly once per tile, automatically, with no
+> button press and no ceremony, **Mobile Playability v1** — a unified
+> input/layout pass so the same build runs comfortably on a phone browser
+> (touch tap = reveal, long-press = flag, visible HUD probe-arm buttons,
+> column layout under 720 CSS px, board auto-scaled to fit, viewport-aware
+> initial board defaults — desktop boots into 24×24 / 99 / 18, narrow
+> viewports boot into 16×16 / 40 / 12 — selected once at module load so
+> resize and reseed never mutate an active run, and no separate mobile
+> codepath), and **Run Timeline Ledger v1 + Post-Run Resolved Curve** —
+> the engine-owned forensic record of every effectful action in the
+> current run (step, action kind, resolved non-mine count, flagged count,
+> post-action witness charge, contradiction count, phase) plus a
+> post-run summary panel whose hero graph is resolved-% over step count,
+> inline SVG, one polyline, no chart library, no medals, no score. Tiles
+> are `unresolved | resolved | flagged`, the run phase is
+> `active | breached | cleared`, the player has a finite pool of direct
+> observations, they can ask *about a region* rather than a tile, they
+> can look back at the last several such questions without a paper
+> notebook, the field visibly refuses to host impossibilities, some
+> tiles require an additional payment to reveal their constraint after
+> being proved safe, authority returns only when the field actually
+> stabilizes, and — once the run ends — the board *remembers what
+> happened*: the same seed + same action log reproduces the same ledger
+> and the same resolved curve, replay-truth, no runtime clocks. The
+> identity loop now reads: safety and legibility are separate purchases,
+> restoration is earned by demonstrated understanding rather than button
+> correctness, and a finished run is a readable artifact rather than a
+> one-bit win/loss. Next substantive foundation decisions: layering
+> additional traces onto the resolved curve (witness-charge line,
+> contradiction markers, probe markers, breach marker, closure pips), a
+> headless test harness that consumes the action log to reproduce
+> ledgers bit-for-bit, the second probe geometry (row/column signature
+> or rectangular scan), and evaluating whether closure-only restoration
+> tightens the economy enough to become canon over a full run. Still
+> foundation work — not progression, metagame, or content.
+
+**Superseded — run summary bullet (in What the visual proof does):**
+> * once the run reaches a terminal phase (breached or cleared), the HUD
+>   replaces the plain "stabilized" banner with a **Run Summary** panel
+>   whose hero element is an inline-SVG resolved curve (% of non-mine
+>   tiles resolved, over action-step count) and a compact stat block
+>   listing reveal / flag / confirm / probe / unveil counts, closure
+>   restorations, contradiction peak, final witness charge, and — on
+>   breach — the step at which breach fired. The panel uses the same red
+>   palette as the breach banner on loss and the cyan palette of the
+>   stabilized banner on clear; no medals, no score, no leaderboard. One
+>   polyline, two axis lines, one 50% gridline. The curve's replay-truth
+>   comes from `runHistory`; the panel is pure derivation
+
+Design notes for this pass:
+
+1. **Engine extension was minimal and additive.** The only `runHistory`
+   schema change was adding the `input` field to `RunLedgerEntry`. The
+   outer `reduceGame` already had the action object in scope at append
+   time; sourcing `{x, y}` (and orientation, for probes) costs nothing.
+   The old `RunAction` discriminator stays — `input` does not duplicate
+   it. The cost is a few extra bytes per ledger entry; the benefit is
+   that a copied trace is *replayable*, not just summarizable.
+2. **`input` is structurally narrow on purpose.** Shape is
+   `{ x, y, orientation? }`, no `type` field. `RunLedgerEntry.action`
+   already carries the discriminator; duplicating it inside `input`
+   would be redundant noise in every export. A future replay player
+   reconstructs a `GameAction` by composing the two fields.
+3. **`runTracePoints` is one selector, not five.** Five-channel output
+   (`chargePoints`, `contradictionSteps`, `probeSteps`, `unveilSteps`,
+   `closureSteps`, `breachStep`, `witnessMax`) lives in a single
+   structure so the renderer pays for one `useMemo` instead of six.
+   Each consumer can ignore the channels it doesn't draw — the runtime
+   cost of an unused array reference is zero.
+4. **Closure detection from charge deltas, not a per-entry count.**
+   We considered adding a `closuresFiredThisStep` field to
+   `RunLedgerEntry`, but the action cost table is already a property
+   the engine privately knows; deriving "≥1 closure fired" via
+   `witnessCharge > prev - cost(action)` keeps the ledger lean. Cap-
+   absorbed closures (charge already at max) are silently missed —
+   documented in the selector — accepted because in practice the cap
+   is touched only at full charge, which is rare mid-run.
+5. **Rising-edge contradictions, not every nonzero step.** Plotting a
+   dot at every step where `contradictionCount > 0` would smear into a
+   continuous band along stretches of unresolved over-flag. The
+   forensic story is *when* a new contradiction appeared, not how
+   long it lingered — so we mark only the rising edge.
+6. **Tooltip rendered inside the SVG.** Putting the scrubber tooltip
+   in a `<g>` with `<rect>` and `<text>` (instead of an absolutely-
+   positioned DOM div) means we don't need to measure the rendered
+   SVG dimensions to position it. It scales with the graph's CSS
+   width and stays aligned at any zoom. Cost: line wrapping is manual.
+   Worth it.
+7. **Pip lanes outside the plot, not inside.** The first sketch put
+   probe / unveil / closure pips along the X-axis baseline as inside-
+   plot ticks, but they overlapped the resolved curve at low resolved
+   %. Extending `PAD_B` from 18 → 32 to fit three 4px pip lanes
+   beneath the plot baseline keeps each channel readable without
+   colliding with the hero curve. The X-axis labels still sit at the
+   bottom edge of the SVG.
+8. **Trace export uses clipboard, not localStorage.** Canon's "no
+   historical persistence" stance is preserved. The clipboard is the
+   distribution channel — the player can paste a trace into a
+   pastebin, an issue, a chat message, or the (future, deferred)
+   paste-trace replay player. No accounts, no servers, no per-device
+   history list.
+9. **`copy trace` button disabled when ledger is empty.** A run that
+   ends at terminal phase before any effectful action — a first-click
+   breach, for example — still produces a single-entry ledger, so the
+   normal case is non-empty. The disabled state covers the hypothetical
+   "summary panel mounted with empty ledger" case for completeness.
+10. **Hover state intentionally not engine-side.** Step Inspector
+    state lives in `useState` inside `RunSummary`, *not* on
+    `GameState`. The replay-determinism contract requires that two
+    runs with the same action log produce the same engine state; if
+    hover entered engine state, two operators replaying the same trace
+    while one of them scrubbed would diverge. The same discipline
+    already governs `historyHighlight` in the live HUD; we held the
+    line here.
+11. **Explicitly deferred:** the paste-trace replay player that
+    consumes the new export format (the schema is now stable; the
+    consumer is not), multi-run comparison views, persistent run
+    history, a headless test harness that drives the reducer from
+    trace JSON. The brief was explicit about not building progression
+    or content this pass; we held the line.
