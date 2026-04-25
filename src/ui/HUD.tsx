@@ -25,6 +25,12 @@ interface HUDProps {
   // board.
   occludedCount: number;
   onReseed: (seed: number) => void;
+  // Mobile Playability v1: explicit probe-arm controls. Mobile has no
+  // keyboard; these visible buttons (also usable on desktop) toggle the
+  // same probe-mode state the H / V keys drive. Toggling the same
+  // orientation again disarms — matches the keyboard contract exactly.
+  onArmProbe: (orientation: ProbeOrientation) => void;
+  onCancelProbe: () => void;
 }
 
 const ORIENTATION_GLYPH: Record<ProbeOrientation, string> = {
@@ -40,6 +46,8 @@ export function HUD({
   contradictionCount,
   occludedCount,
   onReseed,
+  onArmProbe,
+  onCancelProbe,
 }: HUDProps) {
   const { config } = state.board;
   const tally = tallyTiles(state);
@@ -108,6 +116,39 @@ export function HUD({
         <div className="hud-probe-note">
           structural scan · {PROBE_TUNABLES.length}-cell line · costs{' '}
           {PROBE_TUNABLES.cost} charge
+        </div>
+        <div className="hud-probe-actions" role="group" aria-label="witness probe controls">
+          <button
+            type="button"
+            className={`hud-probe-action ${
+              probeMode === 'horizontal' ? 'hud-probe-action-on' : ''
+            }`}
+            aria-pressed={probeMode === 'horizontal'}
+            onClick={() => onArmProbe('horizontal')}
+          >
+            <span className="hud-probe-glyph">{ORIENTATION_GLYPH.horizontal}</span>
+            H
+          </button>
+          <button
+            type="button"
+            className={`hud-probe-action ${
+              probeMode === 'vertical' ? 'hud-probe-action-on' : ''
+            }`}
+            aria-pressed={probeMode === 'vertical'}
+            onClick={() => onArmProbe('vertical')}
+          >
+            <span className="hud-probe-glyph">{ORIENTATION_GLYPH.vertical}</span>
+            V
+          </button>
+          <button
+            type="button"
+            className="hud-probe-action hud-probe-action-cancel"
+            onClick={onCancelProbe}
+            disabled={probeMode === null}
+            aria-label="cancel probe mode"
+          >
+            esc
+          </button>
         </div>
       </div>
 
@@ -250,18 +291,18 @@ export function HUD({
       </div>
 
       <div className="hud-hint">
-        <div>left-click unresolved — resolve (costs 1 charge)</div>
-        <div>right-click — flag (free)</div>
-        <div>click numbered tile — confirm (when flags match)</div>
+        <div>tap / left-click unresolved — resolve (costs 1 charge)</div>
+        <div>long-press / right-click — flag (free)</div>
+        <div>tap a numbered tile — confirm (when flags match)</div>
         <div>fully stabilizing a constraint restores +1 charge</div>
         <div>
-          h / v — arm horizontal / vertical probe (costs{' '}
+          probe buttons (or h / v) — arm horizontal / vertical probe (costs{' '}
           {PROBE_TUNABLES.cost} charge)
         </div>
-        <div>esc — disarm probe</div>
+        <div>esc / cancel button — disarm probe</div>
         <div>red halo — local constraint proven impossible</div>
         <div>
-          sealed tile (◈) — safe but value hidden; click to unveil (costs{' '}
+          sealed tile (◈) — safe but value hidden; tap to unveil (costs{' '}
           {PROTECTED_TUNABLES.unveilCost} charge)
         </div>
       </div>

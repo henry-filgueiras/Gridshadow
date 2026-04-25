@@ -226,6 +226,16 @@ export function GameView() {
         contradictionCount={contradictions.length}
         occludedCount={protected_.occluded}
         onReseed={(seed) => dispatch({ type: 'regen', seed })}
+        // Mobile Playability v1: explicit toggle behavior matches the H/V
+        // keyboard contract — re-arming the same orientation disarms.
+        // Terminal phases short-circuit (no probe arming once breached or
+        // cleared) so the buttons can't strand the HUD in a misleading
+        // armed state when the field is no longer interactive.
+        onArmProbe={(orientation) => {
+          if (state.phase.kind !== 'active') return;
+          setProbeMode((m) => (m === orientation ? null : orientation));
+        }}
+        onCancelProbe={() => setProbeMode(null)}
       />
     </div>
   );

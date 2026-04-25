@@ -101,6 +101,20 @@ const GLYPH_MINE = '●';
 // platform fonts.
 const GLYPH_PROTECTED = '◈';
 
+// Mobile Playability v1 — touch long-press for flag toggle.
+//
+// 400ms is the common heuristic floor for "deliberate" press (faster reads
+// as a fumbled tap, slower reads as the user wondering if anything is
+// happening). The brief gave 350–500ms as the sane band; we sit dead-center.
+//
+// MOVE tolerance is in CSS pixels of pointermove travel before the gesture
+// is canceled. Tile-size at scaled-down mobile widths can be ~14 CSS px, so
+// a too-tight threshold would cancel on every imperceptible drift; too
+// loose and a deliberate swipe registers as a hold. 10 px is a common
+// finger-tremor compromise.
+const TOUCH_LONG_PRESS_MS = 400;
+const TOUCH_MOVE_TOLERANCE_PX = 10;
+
 export interface BoardRendererEvents {
   onHover(x: number, y: number): void;
   onHoverClear(): void;
@@ -153,6 +167,27 @@ export class BoardRenderer {
   private tileGlyphs: Text[] = [];
   private currentBoard: Board | null = null;
 
+  // Mobile Playability v1: in-flight touch gesture state. Tracks the tile
+  // the touch started on, the long-press timer, the start coordinates for
+  // movement-cancellation, and whether the timer already fired (so the
+  // pointerup hand-off knows whether to dispatch a tap action). Mouse/pen
+  // input bypasses this entirely and uses the existing button-based path.
+  private touchGesture: {
+    tileX: number;
+    tileY: number;
+    startX: number;
+    startY: number;
+    timer: ReturnType<typeof setTimeout>;
+    longPressFired: boolean;
+    pointerId: number;
+  } | null = null;
+  // Bound canvas listeners for touch tracking. Stored as fields so destroy()
+  // can remove them — anonymous closures would leak.
+  private readonly onCanvasPointerMove: (e: PointerEvent) => void;
+  private readonly onCanvasPointerUp: (e: PointerEvent) => void;
+  private readonly onCanvasPointerCancel: (e: PointerEvent) => void;
+  private readonly onRendererResize: () => void;
+
   constructor(app: Application, events: BoardRendererEvents) {
     this.app = app;
     this.events = events;
@@ -182,6 +217,58 @@ export class BoardRenderer {
         (CONTRADICTION_ALPHA_MAX - CONTRADICTION_ALPHA_MIN) * eased;
     };
     this.app.ticker.add(this.haloTicker, this);
+
+    // Touch gesture tracking is bound at the canvas, not per-tile, because
+    // a touch can drift across tile boundaries (or off the canvas entirely)
+    // mid-press and we still want to either cancel the gesture cleanly or
+    // hand it off to the originating tile on release. Per-tile listeners
+    // would lose the gesture the moment the finger crossed a gap.
+    this.onCanvasPointerMove = (e: PointerEvent) => {
+      const g = this.touchGesture;
+      if (!g || e.pointerId !== g.pointerId) return;
+      const dx = e.clientX - g.startX;
+      const dy = e.clientY - g.startY;
+      if (dx * dx + dy * dy > TOUCH_MOVE_TOLERANCE_PX ** 2) {
+        // Finger moved enough to read as "not a tap, not a hold" — abort.
+        // Both the long-press flag AND the would-be tap are canceled, so
+        // a swipe across the board never accidentally reveals or flags.
+        this.cancelTouchGesture();
+      }
+    };
+    this.onCanvasPointerUp = (e: PointerEvent) => {
+      const g = this.touchGesture;
+      if (!g || e.pointerId !== g.pointerId) return;
+      const { tileX, tileY, longPressFired } = g;
+      this.cancelTouchGesture();
+      // If the long-press timer already fired, the flag was dispatched on
+      // its own; the release is a no-op so we don't double-toggle. If the
+      // timer is still pending at release, this is a deliberate tap —
+      // route through the same tile-state-aware logic that mouse-left uses.
+      if (!longPressFired) {
+        this.dispatchTap(tileX, tileY);
+      }
+    };
+    this.onCanvasPointerCancel = (e: PointerEvent) => {
+      const g = this.touchGesture;
+      if (!g || e.pointerId !== g.pointerId) return;
+      // Browser yanked the gesture (system gesture, app switch, etc.).
+      // Discard — neither a flag nor a tap should fire.
+      this.cancelTouchGesture();
+    };
+    const canvas = this.app.canvas;
+    canvas.addEventListener('pointermove', this.onCanvasPointerMove);
+    canvas.addEventListener('pointerup', this.onCanvasPointerUp);
+    canvas.addEventListener('pointercancel', this.onCanvasPointerCancel);
+
+    // Auto-fit: keep the 24×24 grid visible inside whatever pixel area Pixi
+    // is currently sized to. Without this, narrow viewports clipped the
+    // board's right and bottom edges (Pixi's `resizeTo: host` updates the
+    // canvas, but the tile root was rendered at 1:1 with a centered offset
+    // that goes negative on small screens).
+    this.onRendererResize = () => {
+      this.applyFitScale();
+    };
+    this.app.renderer.on('resize', this.onRendererResize);
   }
 
   render(state: GameState, overlay: RenderOverlay): void {
@@ -194,7 +281,13 @@ export class BoardRenderer {
   }
 
   destroy(): void {
+    this.cancelTouchGesture();
     this.app.ticker.remove(this.haloTicker, this);
+    this.app.renderer.off('resize', this.onRendererResize);
+    const canvas = this.app.canvas;
+    canvas.removeEventListener('pointermove', this.onCanvasPointerMove);
+    canvas.removeEventListener('pointerup', this.onCanvasPointerUp);
+    canvas.removeEventListener('pointercancel', this.onCanvasPointerCancel);
     this.haloLayer.destroy();
     this.root.destroy({ children: true });
     this.tileBackgrounds = [];
@@ -209,18 +302,11 @@ export class BoardRenderer {
     this.tileGlyphs = [];
     const { width, height } = board.config;
 
-    const pixelWidth = width * TILE_SIZE + (width - 1) * TILE_GAP;
-    const pixelHeight = height * TILE_SIZE + (height - 1) * TILE_GAP;
-    this.root.x = Math.round((this.app.screen.width - pixelWidth) / 2);
-    this.root.y = Math.round((this.app.screen.height - pixelHeight) / 2);
     // Halo layer rides the same origin as the tile grid, so halo geometry
     // can be expressed in tile-local coordinates (parallel to rebuildBoard
     // and paintHalos) rather than re-adding the board offset everywhere.
-    this.haloLayer.x = this.root.x;
-    this.haloLayer.y = this.root.y;
-    // Board rebuilt — old halo geometry no longer valid. Force a rebuild
-    // on the next paint cycle rather than paint into potentially-stale
-    // coordinate space.
+    // Position is set by applyFitScale() below; we only clear stale state
+    // here.
     this.haloLayer.clear();
     this.lastContradictionKey = '';
 
@@ -238,6 +324,15 @@ export class BoardRenderer {
         container.on('pointerover', () => this.events.onHover(hx, hy));
         container.on('pointerout', () => this.events.onHoverClear());
         container.on('pointerdown', (event: FederatedPointerEvent) => {
+          // Touch: long-press flags, tap dispatches the same tile-state-
+          // aware action that mouse-left uses. The press/release split is
+          // tracked at the canvas level so cross-tile drag cancels cleanly;
+          // we only set up the gesture here.
+          if (event.pointerType === 'touch') {
+            this.beginTouchGesture(hx, hy, event);
+            return;
+          }
+          // Mouse / pen / unknown — keep the existing button-based path.
           // button: 0 = left, 1 = middle, 2 = right. Middle and left-on-a-
           // resolved-numbered-tile both request a Witness Confirmation; the
           // engine rejects the action if preconditions aren't met, so the
@@ -252,28 +347,7 @@ export class BoardRenderer {
             return;
           }
           if (event.button !== 0) return;
-          const tile =
-            this.currentBoard?.tiles[hy * this.currentBoard.config.width + hx];
-          if (tile && tile.state === 'resolved' && !tile.isMine) {
-            // Protected-occluded: left-click buys the number (engine
-            // validates charge and state). A protected tile after
-            // unveiling behaves like any other numbered tile — falls
-            // through to the confirm branch below.
-            if (tile.protected && !tile.valueRevealed) {
-              this.events.onUnveil(hx, hy);
-              return;
-            }
-            if (tile.adjacentMines > 0) {
-              this.events.onConfirm(hx, hy);
-              return;
-            }
-            // Zero-adjacency resolved: nothing actionable. Fall through
-            // to onReveal so probe mode (which routes through
-            // `onReveal`) still has a chance to fire on resolved
-            // zero-cells — the engine will refuse, but routing stays
-            // predictable.
-          }
-          this.events.onReveal(hx, hy);
+          this.dispatchTap(hx, hy);
         });
 
         const bg = new Graphics();
@@ -299,6 +373,119 @@ export class BoardRenderer {
         this.tileGlyphs.push(glyph);
       }
     }
+
+    // Position + scale once the geometry exists. applyFitScale reads the
+    // current Pixi screen size, so this also handles the case where the
+    // host element was already a non-default size at the time of mount.
+    this.applyFitScale();
+  }
+
+  // Mobile Playability v1: dispatch the tile-state-aware tap action — the
+  // same routing mouse-left uses, factored out so touch tap-on-release and
+  // mouse pointerdown share one rule set. Probe mode is a layer above us
+  // (GameView re-routes onReveal into a probe action when armed); the
+  // renderer only emits the most natural intent for each tile state.
+  private dispatchTap(hx: number, hy: number): void {
+    const tile =
+      this.currentBoard?.tiles[hy * this.currentBoard.config.width + hx];
+    if (tile && tile.state === 'resolved' && !tile.isMine) {
+      // Protected-occluded: tap buys the number (engine validates charge
+      // and state). A protected tile after unveiling behaves like any
+      // other numbered tile — falls through to the confirm branch below.
+      if (tile.protected && !tile.valueRevealed) {
+        this.events.onUnveil(hx, hy);
+        return;
+      }
+      if (tile.adjacentMines > 0) {
+        this.events.onConfirm(hx, hy);
+        return;
+      }
+      // Zero-adjacency resolved: nothing actionable. Fall through to
+      // onReveal so probe mode (which routes through `onReveal`) still
+      // has a chance to fire on resolved zero-cells — the engine will
+      // refuse, but routing stays predictable.
+    }
+    this.events.onReveal(hx, hy);
+  }
+
+  // Mobile Playability v1: open a touch gesture on a tile. The timer fires
+  // a flag if the finger stays put long enough; otherwise the canvas-level
+  // pointerup handler dispatches a tap on release. Cross-tile drag past
+  // TOUCH_MOVE_TOLERANCE_PX cancels both paths via the canvas pointermove
+  // handler. We deliberately do not stash the tile snapshot — rerouting
+  // through `dispatchTap` on release re-reads tile state, so a state
+  // change mid-press (rare) doesn't fire a stale action.
+  private beginTouchGesture(
+    tileX: number,
+    tileY: number,
+    event: FederatedPointerEvent,
+  ): void {
+    // Single-touch only: a second finger arriving mid-press is ignored
+    // rather than reset, so the original gesture can complete naturally.
+    // The brief explicitly excluded multi-touch complexity.
+    if (this.touchGesture !== null) return;
+    const startX = event.clientX;
+    const startY = event.clientY;
+    const pointerId = event.pointerId;
+    const timer = setTimeout(() => {
+      const g = this.touchGesture;
+      // Guard: timer might fire after cancellation if the clear races. The
+      // null check covers the cancellation path; the pointerId check
+      // prevents a stale timer from acting on a freshly-opened gesture.
+      if (!g || g.pointerId !== pointerId) return;
+      g.longPressFired = true;
+      this.events.onFlag(tileX, tileY);
+    }, TOUCH_LONG_PRESS_MS);
+    this.touchGesture = {
+      tileX,
+      tileY,
+      startX,
+      startY,
+      timer,
+      longPressFired: false,
+      pointerId,
+    };
+  }
+
+  private cancelTouchGesture(): void {
+    const g = this.touchGesture;
+    if (!g) return;
+    clearTimeout(g.timer);
+    this.touchGesture = null;
+  }
+
+  // Auto-fit the tile root inside the current Pixi screen. Uniform scale,
+  // capped at 1.0 so tiles never grow past their authored 32 CSS px size on
+  // big monitors (preserves the desktop look). On narrow viewports the
+  // scale falls below 1.0 and the board shrinks to fit — small tap targets,
+  // but visible and operable. Centered horizontally and vertically inside
+  // the available space.
+  private applyFitScale(): void {
+    if (this.currentBoard === null) return;
+    const { width, height } = this.currentBoard.config;
+    const pixelWidth = width * TILE_SIZE + (width - 1) * TILE_GAP;
+    const pixelHeight = height * TILE_SIZE + (height - 1) * TILE_GAP;
+    const screenW = this.app.screen.width;
+    const screenH = this.app.screen.height;
+    if (
+      pixelWidth <= 0 ||
+      pixelHeight <= 0 ||
+      screenW <= 0 ||
+      screenH <= 0
+    ) {
+      return;
+    }
+    const fit = Math.min(screenW / pixelWidth, screenH / pixelHeight, 1);
+    const drawnW = pixelWidth * fit;
+    const drawnH = pixelHeight * fit;
+    this.root.scale.set(fit);
+    this.root.x = Math.round((screenW - drawnW) / 2);
+    this.root.y = Math.round((screenH - drawnH) / 2);
+    // Halo layer rides the same transform so halo geometry stays in
+    // tile-local coordinates everywhere it is authored.
+    this.haloLayer.scale.set(fit);
+    this.haloLayer.x = this.root.x;
+    this.haloLayer.y = this.root.y;
   }
 
   private paint(state: GameState, overlay: RenderOverlay): void {

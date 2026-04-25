@@ -25,7 +25,11 @@ and require 1 witness charge to unveil the constraint number, and
 witness charge comes back to the operator when a resolved numbered tile
 becomes locally fully stabilized (flags match its constraint, no adjacent
 tile remains unresolved), strictly once per tile, automatically, with no
-button press and no ceremony. Tiles are `unresolved | resolved | flagged`,
+button press and no ceremony, and **Mobile Playability v1** — a unified
+input/layout pass so the same build runs comfortably on a phone browser
+(touch tap = reveal, long-press = flag, visible HUD probe-arm buttons,
+column layout under 720 CSS px, board auto-scaled to fit, no separate
+mobile codepath). Tiles are `unresolved | resolved | flagged`,
 the run phase is `active | breached | cleared`, the player has a finite
 pool of direct observations, they can ask *about a region* rather than a
 tile, they can look back at the last several such questions without a
@@ -207,27 +211,34 @@ excavation bill.
 
 ### What the visual proof does
 24×24 interactive grid (99 hazards default) with the full reveal / flag /
-confirm / probe / unveil loop under a witness budget:
-* left-click on an unresolved tile resolves it and spends 1 witness charge;
-  zero-adjacency regions flood-reveal for free; reveals with zero charge
-  are refused
-* left-click on a resolved, protected, not-yet-unveiled tile dispatches
-  `unveil` — the engine validates tile state and charge, then flips
-  `valueRevealed` and deducts 1 charge, making the constraint number
+confirm / probe / unveil loop under a witness budget. Plays on desktop
+(mouse + keyboard) and mobile (touch + visible HUD controls) without a
+forked codepath — the renderer routes per-tile-state intent and the layout
+stacks on narrow viewports:
+* tap (touch) or left-click (mouse) on an unresolved tile resolves it and
+  spends 1 witness charge; zero-adjacency regions flood-reveal for free;
+  reveals with zero charge are refused
+* tap or left-click on a resolved, protected, not-yet-unveiled tile
+  dispatches `unveil` — the engine validates tile state and charge, then
+  flips `valueRevealed` and deducts 1 charge, making the constraint number
   visible; probe mode does *not* preempt unveil (probe refuses resolved
   targets anyway, and forcing a disarm to unveil would be mode sludge)
-* left-click on a resolved numbered tile *or* middle-click anywhere
-  dispatches `confirm` — the engine validates the flag-match condition and
-  reveals the remaining unflagged neighbors as a group; confirm on an
-  occluded tile is refused (the hidden number cannot leak via chord
-  outcomes)
-* right-click toggles a flag — always free
+* tap or left-click on a resolved numbered tile dispatches `confirm` — the
+  engine validates the flag-match condition and reveals the remaining
+  unflagged neighbors as a group; confirm on an occluded tile is refused
+  (the hidden number cannot leak via chord outcomes); on desktop, middle-
+  click anywhere is a redundant alias for the same action
+* long-press (touch, ~400ms with cancellation past 10 CSS px of drift) or
+  right-click (mouse) toggles a flag — always free, fires on any tile
+  state and at any time, including while probe mode is armed
 * `h` arms a horizontal probe, `v` arms a vertical probe, pressing either
-  again (or `Esc`) disarms; while armed, the hovered 5-cell segment is
-  outlined in cyan, hover highlight is suppressed, and left-click on the
-  center spends 2 charge to return the segment's total hazard count
-  (no per-tile truth revealed); the HUD's **witness probe history** block
-  lists the recent successful probes (newest first, up to 8 entries) with
+  again (or `Esc`) disarms; the same arming is reachable on touch via
+  three explicit HUD buttons (H / V / cancel) so mobile operators do not
+  need a keyboard. While armed, the hovered 5-cell segment is outlined
+  in cyan, hover highlight is suppressed, and tapping/clicking the center
+  spends 2 charge to return the segment's total hazard count (no per-tile
+  truth revealed); the HUD's **witness probe history** block lists the
+  recent successful probes (newest first, up to 8 entries) with
   orientation / coord / hazards / scanned-cell count; hovering a row
   re-highlights that probe's exact segment on the board using the same
   inset cyan outline as the live preview
@@ -268,6 +279,15 @@ confirm / probe / unveil loop under a witness budget:
   complete")
 * reseed regenerates a fresh active board, refills charge to max, and
   resets confirms to 0
+* layout is responsive: above 720 CSS px viewport width the board sits
+  beside the HUD (existing desktop layout); at or below 720 px the
+  `.game-view` flex switches to column — board first, HUD beneath, page
+  scrollable. The renderer auto-fits the tile root with a uniform scale
+  capped at 1.0 so the 24×24 grid is always fully visible inside Pixi's
+  current screen, centered, never clipped at edges or under the HUD;
+  tiles shrink (rather than overflow) on narrow viewports. `.board-host`
+  carries `touch-action: none` so a long-press never raises the system
+  context menu and a swipe across the board never drags the page
 
 ### Per-exchange process (from CLAUDE.md)
 1. Update this file.
@@ -1622,3 +1642,163 @@ Output contract answers:
    restoration give the operator enough charge to finish, or does the
    base budget need a small bump to compensate? Answer through play,
    not modelling.
+
+### 2026-04-24 — Claude Opus 4.7 (mobile playability v1)
+First pass at making the existing game operable on a phone browser.
+Mechanics are unchanged — every action, every cost, every breach/clear
+condition is identical to desktop. The work was strictly input and
+layout: the HUD no longer overlays the board, the board no longer
+overflows narrow viewports, touch input has a deliberate flag gesture,
+and probe arming has visible buttons because mobile has no H / V keys.
+Demoted three Canon bullets (left-click / right-click / probe arming)
+because the input path widened to include touch equivalents — the old
+mouse-only language stopped being true. Verbatim:
+
+**Superseded — visual-proof bullet (left-click reveal):**
+> * left-click on an unresolved tile resolves it and spends 1 witness charge;
+>   zero-adjacency regions flood-reveal for free; reveals with zero charge
+>   are refused
+
+**Superseded — visual-proof bullet (left/middle-click confirm + right-click flag):**
+> * left-click on a resolved, protected, not-yet-unveiled tile dispatches
+>   `unveil` — the engine validates tile state and charge, then flips
+>   `valueRevealed` and deducts 1 charge, making the constraint number
+>   visible; probe mode does *not* preempt unveil (probe refuses resolved
+>   targets anyway, and forcing a disarm to unveil would be mode sludge)
+> * left-click on a resolved numbered tile *or* middle-click anywhere
+>   dispatches `confirm` — the engine validates the flag-match condition and
+>   reveals the remaining unflagged neighbors as a group; confirm on an
+>   occluded tile is refused (the hidden number cannot leak via chord
+>   outcomes)
+> * right-click toggles a flag — always free
+
+**Superseded — visual-proof bullet (probe arming via keyboard only):**
+> * `h` arms a horizontal probe, `v` arms a vertical probe, pressing either
+>   again (or `Esc`) disarms; while armed, the hovered 5-cell segment is
+>   outlined in cyan, hover highlight is suppressed, and left-click on the
+>   center spends 2 charge to return the segment's total hazard count
+>   (no per-tile truth revealed); the HUD's **witness probe history** block
+>   lists the recent successful probes (newest first, up to 8 entries) with
+>   orientation / coord / hazards / scanned-cell count; hovering a row
+>   re-highlights that probe's exact segment on the board using the same
+>   inset cyan outline as the live preview
+
+Output contract answers:
+
+1. **Files changed:** `src/styles.css` (responsive `@media (max-width:
+   720px)` stack, `.board-host` `touch-action: none` + sizing, new
+   `.hud-probe-actions` button block); `src/render/BoardRenderer.ts`
+   (touch gesture handling — `beginTouchGesture` / `cancelTouchGesture` /
+   canvas-level pointermove/up/cancel listeners; `dispatchTap` factored
+   from the prior inline left-click switch so mouse and touch share one
+   tile-state-aware router; `applyFitScale` plus a `renderer.on('resize')`
+   subscription so the board auto-fits whatever screen Pixi is sized to,
+   centered, capped at 1.0 scale; `rebuildBoard` no longer positions
+   `root` directly — it delegates to `applyFitScale` after geometry is
+   built); `src/ui/HUD.tsx` (new `onArmProbe` / `onCancelProbe` props,
+   three `<button>` controls in the existing probe block, hint copy
+   widened to "tap / left-click", "long-press / right-click", "probe
+   buttons (or h / v)"); `src/ui/GameView.tsx` (passes the two new
+   handlers, with terminal-phase guard on arm); `DIRECTORS_NOTES.md`.
+
+2. **Exact responsive layout behavior:** desktop (>720 CSS px viewport
+   width) is unchanged: `.game-view` is a flex row, board fills the
+   remaining width after the HUD's clamped 240–320 px column, document
+   `overflow: hidden`. At ≤720 px, `.game-view` becomes
+   `flex-direction: column`; document and root drop to `overflow: auto`
+   so the page can scroll; `.board-host` is `width: min(100%, 80vh)`
+   plus `aspect-ratio: 1 / 1` and `margin: 0 auto`, which cleanly resolves
+   to a square that never exceeds 80% of viewport height (leaves room for
+   the HUD's probe controls and witness meter without scrolling on
+   ordinary phones); `.hud` becomes `width: auto; margin: 8px;
+   max-height: none; overflow: visible`, so it flows in document order
+   beneath the board and scrolls with the page rather than internally.
+   Inside Pixi, `BoardRenderer.applyFitScale` computes
+   `min(screenW / pixelWidth, screenH / pixelHeight, 1)` and applies that
+   uniform scale to both `root` and `haloLayer`, then centers them — so
+   even with a bare 360 px viewport, the full 24×24 grid is visible
+   (tiles shrink to ~14 CSS px), no clipped edges, no horizontal scroll.
+
+3. **Exact tap / long-press flag interaction:** at `pointerdown` the
+   tile container checks `event.pointerType`. If `'touch'`, it opens a
+   touch gesture: stash `(tileX, tileY, clientX, clientY, pointerId)`,
+   start a 400 ms `setTimeout` whose firing dispatches `onFlag(tileX,
+   tileY)` and sets `longPressFired = true`. The renderer also listens
+   on the canvas itself (not per-tile) for `pointermove`, `pointerup`,
+   and `pointercancel` keyed on the same `pointerId`. If pointermove
+   reads `dx² + dy² > 100` (i.e. > 10 CSS px from the start), the
+   gesture is canceled — neither flag nor tap fires, so a swipe across
+   the board is inert. On `pointerup`, if the long-press already fired
+   the upstroke is a no-op (preventing double-toggle); otherwise
+   `dispatchTap(tileX, tileY)` runs the same routing left-click uses
+   on desktop. `pointercancel` discards silently. Mouse and pen pointer
+   types take the prior button-based path unchanged: button 0 →
+   `dispatchTap` (tile-state aware), button 1 → confirm, button 2 →
+   flag. A second simultaneous touch is ignored — the brief explicitly
+   excluded multi-touch — so the original gesture completes naturally.
+
+4. **Exact mobile probe affordance chosen:** three plain `<button>`s
+   inside the HUD's existing `.hud-probe` block, in a 1-1-auto grid:
+   "↔ H" arms horizontal, "↕ V" arms vertical, "esc" cancels. Tapping
+   the same orientation again disarms (matches the H / V keyboard
+   contract — `setProbeMode((m) => m === orientation ? null : orientation)`),
+   so the buttons toggle rather than latch. The cancel button is
+   `disabled` when no probe is armed, with `aria-pressed` on the H / V
+   buttons reflecting current arm state. `min-height: 36px`,
+   `touch-action: manipulation`, `-webkit-tap-highlight-color:
+   transparent` — generous tap target, no double-tap-zoom 300ms delay,
+   no iOS gray flash. Same buttons render and function on desktop.
+   Keyboard shortcuts (H / V / Esc) remain wired in `GameView` via the
+   existing `window.keydown` listener; both paths land on the same
+   `setProbeMode` setter.
+
+5. **Exact confirm interaction path on touch:** **tap on a resolved
+   numbered (non-occluded) tile**. `BoardRenderer.dispatchTap` (factored
+   out of the prior inline left-click switch) reads the tile and routes:
+   resolved + protected-occluded → `onUnveil`; resolved + adjacentMines
+   > 0 → `onConfirm`; otherwise → `onReveal`. So a single tap on a
+   numbered tile already dispatches `confirm`, with the engine's chord-
+   precondition check (flag count matches, ≥1 unresolved neighbor) as
+   the only acceptance gate. No new toggle / armed mode / extra button —
+   the existing tile-state routing **is** the confirm path. Middle-
+   click stays on desktop as a redundant alias; mobile users do not
+   need it because the same action is reachable by tapping the same
+   tile they would have read. Accidental-confirm risk is low: confirm
+   on a tile whose flags don't match the constraint is an engine no-op,
+   and the worst-case (a correctly-configured neighborhood with one
+   wrong flag) breaches — same as a wrong reveal would, by the same
+   underlying mechanic. Intentionality is preserved by tile state, not
+   by mode.
+
+6. **Desktop compatibility notes:** zero behavioral regression in the
+   common case. The pointerdown handler routes by `pointerType` — only
+   `'touch'` enters the gesture path, so mouse and pen continue to use
+   the existing button-based switch. Right-click flagging is unchanged.
+   Middle-click confirm is unchanged. Hover preview is unchanged.
+   Probe arming via H / V / Esc is unchanged. The new probe action
+   buttons are an additive HUD control on desktop (some operators may
+   prefer the click; either path lands on the same setter). The new
+   `applyFitScale` will scale-down the board on a desktop window that
+   is *narrower than the board needs* (previously it would clip) — a
+   silent improvement, not a regression. Scale is capped at 1.0, so on
+   a normal-sized desktop window the board renders pixel-for-pixel at
+   the original 32-px tile size.
+
+7. **Explicitly deferred:** drag / swipe / pinch / multi-touch gestures
+   for any core action (the brief forbade them); a separate mobile-
+   tuned board geometry (smaller grid, larger tiles) — left to a later
+   pass once we see actual play data; haptic feedback on flag long-
+   press; on-board indicator that distinguishes "tap will reveal" vs
+   "tap will confirm" vs "tap will unveil" (today the tile state
+   conveys this implicitly, and the brief explicitly accepted that the
+   player must always know "what will happen if I tap this tile?"
+   from the tile state); a dedicated Confirm-mode toggle button; mobile-
+   specific tile-size scaling beyond uniform fit; gesture-based
+   probe-mode arming; landscape-specific layout overrides (one
+   breakpoint); long-press timing tuneable from settings; drag-out-of-
+   tile behavior beyond the 10 px movement cancellation (today, drift
+   past 10 px just cancels — there is no ongoing drag tracking). I
+   was unable to do live in-browser regression testing in this
+   environment, so this v1 ships verified-by-typecheck-and-build only;
+   the next exchange should sanity-check the touch path on at least
+   one phone before promoting any of this to canon for keeps.
