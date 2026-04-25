@@ -12,7 +12,10 @@ archive with a new dated entry that supersedes it.
 
 ### Stage
 Reveal / flag / breach / clear loop under a finite **witness charge** budget
-on a 24×24 / 99-hazard default field, with **Witness Confirmation** (chord)
+on a viewport-selected default field — 24×24 / 99 hazards / 18 charges on
+desktop, 16×16 / 40 hazards / 12 charges on phones (selected once at
+module load via `(max-width: 768px)` matchMedia, frozen for the run) —
+with **Witness Confirmation** (chord)
 for inference-rewarded claims, the **Witness Probe** (line scan) as the
 first structural-scan instrument, a bounded **probe history** ledger that
 preserves recent readings, **contradiction highlighting** — a proof-only
@@ -28,8 +31,11 @@ tile remains unresolved), strictly once per tile, automatically, with no
 button press and no ceremony, and **Mobile Playability v1** — a unified
 input/layout pass so the same build runs comfortably on a phone browser
 (touch tap = reveal, long-press = flag, visible HUD probe-arm buttons,
-column layout under 720 CSS px, board auto-scaled to fit, no separate
-mobile codepath). Tiles are `unresolved | resolved | flagged`,
+column layout under 720 CSS px, board auto-scaled to fit, viewport-aware
+initial board defaults — desktop boots into 24×24 / 99 / 18, narrow
+viewports boot into 16×16 / 40 / 12 — selected once at module load so
+resize and reseed never mutate an active run, and no separate mobile
+codepath). Tiles are `unresolved | resolved | flagged`,
 the run phase is `active | breached | cleared`, the player has a finite
 pool of direct observations, they can ask *about a region* rather than a
 tile, they can look back at the last several such questions without a
@@ -124,8 +130,9 @@ excavation bill.
   flagging, confirmation, and denied actions are free. When charge reaches
   0, `reveal` and `unveil` become no-ops; `confirm` remains available —
   the game continues through inference and claim-making. No passive regen,
-  no shops, no batteries. Default budget: 18 charges on a 24×24, 99-hazard
-  field.
+  no shops, no batteries. Starting budget: 18 charges on the desktop
+  default (24×24 / 99 hazards), 12 charges on the mobile default
+  (16×16 / 40 hazards) — see Stage for how the default is picked.
 * **Witness Confirmation (chord)**: `confirm` targets a resolved numbered
   tile. If the count of adjacent flags equals `tile.adjacentMines` AND at
   least one adjacent unresolved, unflagged neighbor exists, every such
@@ -210,11 +217,17 @@ excavation bill.
   The player learning to read the field is the game.
 
 ### What the visual proof does
-24×24 interactive grid (99 hazards default) with the full reveal / flag /
-confirm / probe / unveil loop under a witness budget. Plays on desktop
-(mouse + keyboard) and mobile (touch + visible HUD controls) without a
-forked codepath — the renderer routes per-tile-state intent and the layout
-stacks on narrow viewports:
+Interactive grid with the full reveal / flag / confirm / probe / unveil
+loop under a witness budget. Field size is viewport-selected at module
+load: desktop boots into the 24×24 / 99-hazard expert field with 18
+witness charges; viewports under 768 CSS px boot into the 16×16 / 40-
+hazard friend-test field with 12 charges. The choice is captured once
+per page load and never mutates — rotating a phone or resizing a
+window does not change the active board, and reseeding carries the
+same config forward. Plays on desktop (mouse + keyboard) and mobile
+(touch + visible HUD controls) without a forked codepath — the
+renderer routes per-tile-state intent and the layout stacks on narrow
+viewports:
 * tap (touch) or left-click (mouse) on an unresolved tile resolves it and
   spends 1 witness charge; zero-adjacency regions flood-reveal for free;
   reveals with zero charge are refused
@@ -1802,3 +1815,72 @@ Output contract answers:
    environment, so this v1 ships verified-by-typecheck-and-build only;
    the next exchange should sanity-check the touch path on at least
    one phone before promoting any of this to canon for keeps.
+
+### 2026-04-24 — Claude Opus 4.7 (mobile default board size)
+Extension to Mobile Playability v1: viewport-aware initial board
+defaults so the first phone-browser run is "I want one more run", not
+"I need pinch-zoom therapy." The 24×24 / 99 expert field is right for
+serious desktop play and stays the desktop default; on phones the same
+density renders at ~14 CSS px per tile and the operator drowns. We now
+boot the engine with one of two configs based on a single `matchMedia`
+read at module load. Three Canon facts that previously asserted a
+single default are demoted because the default has bifurcated.
+Verbatim:
+
+**Superseded — Stage opener (single-default field):**
+> Reveal / flag / breach / clear loop under a finite **witness charge** budget
+> on a 24×24 / 99-hazard default field, with **Witness Confirmation** (chord)
+
+**Superseded — Witness charge default-budget line:**
+>   no shops, no batteries. Default budget: 18 charges on a 24×24, 99-hazard
+>   field.
+
+**Superseded — visual-proof opener (single-default field):**
+> 24×24 interactive grid (99 hazards default) with the full reveal / flag /
+> confirm / probe / unveil loop under a witness budget. Plays on desktop
+> (mouse + keyboard) and mobile (touch + visible HUD controls) without a
+> forked codepath — the renderer routes per-tile-state intent and the layout
+> stacks on narrow viewports:
+
+Output contract addition:
+
+8. **Exact mobile default board-size detection + initialization
+   behavior.** Detection: `window.matchMedia('(max-width: 768px)')
+   .matches` evaluated once at module load (in a top-level
+   `pickInitialConfig()` whose result is bound to a module-scope
+   `INITIAL_CONFIG` constant). 768 px is the conventional phone+
+   small-tablet breakpoint and matches the "interaction surface, not
+   device identity" rule the brief asked for: it answers "can a finger
+   comfortably operate this?" rather than "is this technically a
+   phone?" Two `typeof` guards (`window`, `window.matchMedia`) keep
+   the call safe in non-DOM environments (a future SSR build, a
+   headless test harness) — the missing-API path falls through to
+   the desktop config. We deliberately do NOT subscribe to the
+   matchMedia change event, do NOT re-read the breakpoint on resize,
+   and do NOT read it on every render — the choice is frozen at page
+   load. Chosen mobile config: `{ width: 16, height: 16, mineCount:
+   40, witnessCharges: 12 }` (the historical 16×16 / 40 / 12
+   baseline already documented in the desktop comment as the
+   pre-Protected-Constraints field, so this is a clean restoration
+   rather than a new tuning). Desktop config unchanged: `{ width:
+   24, height: 24, mineCount: 99, witnessCharges: 18 }`. Active-board
+   non-mutation is enforced by structure, not by a runtime guard:
+   `INITIAL_CONFIG` is consumed exactly once by `useReducer` at
+   `GameView` mount, and `regen` (the only path that re-creates a
+   board) does `createGameState({ ...state.board.config, seed:
+   action.seed })` — same width, same height, same mineCount, same
+   witnessCharges, only the seed changes. So rotating the phone,
+   crossing the breakpoint via devtools, or hitting reseed cannot
+   move a 16×16 run to 24×24 (or vice versa) — same seed + same
+   chosen config still picks out the same board, forever. Reading
+   the breakpoint at module load also means an HMR reload during
+   development picks up viewport changes naturally; production runs
+   are end-to-end frozen. Files changed: `src/ui/GameView.tsx`
+   (split `INITIAL_CONFIG` into `DESKTOP_INITIAL_CONFIG` /
+   `MOBILE_INITIAL_CONFIG` plus a `pickInitialConfig()` selector,
+   reworked the existing comment to reflect the bifurcation),
+   `DIRECTORS_NOTES.md` (this entry plus three Canon edits with
+   verbatim demotion). Explicitly deferred: a difficulty-selector
+   UI, a board-size settings menu, per-device persistence, tablet-
+   specific cases, gesture-driven mid-run difficulty changes — the
+   brief forbade all of these and the cathedral they would build.

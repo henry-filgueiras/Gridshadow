@@ -10,19 +10,62 @@ import { BoardRenderer } from '../render';
 import type { BoardConfig, Coord, ProbeOrientation } from '../types';
 import { HUD } from './HUD';
 
-// Protected Constraints v1 experiment: bumped the default field to 24×24
+// Protected Constraints v1 experiment: the desktop default field is 24×24
 // with 99 hazards (~17% density) so there's enough ambiguity for the
-// occlusion mechanic to bite, and pulled the starting witness budget to 18
-// — tighter-than-proportional pressure relative to the old 16×16/40/12
+// occlusion mechanic to bite, and the starting witness budget is 18 —
+// tighter-than-proportional pressure relative to the old 16×16/40/12
 // baseline, because the experiment is specifically about whether the
 // player prefers to infer around hidden truths or pay to see them.
-const INITIAL_CONFIG: BoardConfig = {
+const DESKTOP_INITIAL_CONFIG: BoardConfig = {
   width: 24,
   height: 24,
   mineCount: 99,
   seed: 1,
   witnessCharges: 18,
 };
+
+// Mobile Playability v1 — Mobile Default Board Size. On a phone, the
+// 24×24 expert field reads as a wall of micro-tiles; the brief is
+// "readable field > faithful suffering" for first contact. We fall
+// back to the historical 16×16/40/12 baseline (referenced in the
+// desktop comment above), which is the same loop and same engine, just
+// at a density a fingertip can actually operate. Witness charges go
+// back to 12 — the documented baseline budget for that field — because
+// the mobile pass is about access, not about tuning the economy.
+const MOBILE_INITIAL_CONFIG: BoardConfig = {
+  width: 16,
+  height: 16,
+  mineCount: 40,
+  seed: 1,
+  witnessCharges: 12,
+};
+
+// Detect the operator's interaction surface, not their device identity.
+// `(max-width: 768px)` matches phones and small tablets in portrait
+// where the 24×24 grid would render at ~14 CSS px tiles — too cramped
+// for fingers. We deliberately do not sniff user-agent: that lies
+// constantly (desktop sites on tablets, mobile-emulation in devtools)
+// and bakes assumptions into the choice that interaction-surface
+// queries make naturally. typeof guards keep the call safe in non-DOM
+// environments (headless test harness, future SSR) where the desktop
+// default is the right fallback.
+function pickInitialConfig(): BoardConfig {
+  const isMobileViewport =
+    typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(max-width: 768px)').matches;
+  return isMobileViewport ? MOBILE_INITIAL_CONFIG : DESKTOP_INITIAL_CONFIG;
+}
+
+// Resolved once at module load. Capturing the choice here — not on every
+// render, not in response to a resize event — is the load-bearing piece
+// of the contract: rotating the phone, opening devtools, dragging the
+// browser window across the breakpoint must NOT mutate the active run.
+// Same seed + same config still picks out the same board, forever.
+// Reseed (`regen`) carries this config forward unchanged, so a player
+// who started a 16×16 run stays in 16×16 even after rotating to
+// landscape mid-game.
+const INITIAL_CONFIG: BoardConfig = pickInitialConfig();
 
 export function GameView() {
   const hostRef = useRef<HTMLDivElement | null>(null);
