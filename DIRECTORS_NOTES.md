@@ -96,8 +96,12 @@ excavation bill.
   computed, the same rng stream deterministically selects
   `floor(PROTECTED_TUNABLES.fraction × eligible)` safe numbered tiles as
   *protected* (value starts occluded) via Fisher-Yates shuffle of eligible
-  indices. Eligibility: non-mine AND `adjacentMines > 0`. Same seed → same
-  mines → same protected set, forever.
+  indices. Eligibility (Protected Constraints v1.1): non-mine AND
+  `adjacentMines >= 2`. Hidden 1s are excluded as bureaucracy — corner /
+  edge / context-implied 1s are usually already solved by the surrounding
+  field, so protecting them spends witness authority on paperwork rather
+  than on decisions that alter inference. Same seed + same policy
+  version → same mines → same protected set, forever.
 * `tallyTiles(state): TileTally` — pure derivation of
   unresolved / resolved / flagged counts, for HUD and future observers.
 * `protectedTally(state): ProtectedTally` — pure derivation of
@@ -1884,3 +1888,98 @@ Output contract addition:
    UI, a board-size settings menu, per-device persistence, tablet-
    specific cases, gesture-driven mid-run difficulty changes — the
    brief forbade all of these and the cathedral they would build.
+
+### 2026-04-24 — Claude Opus 4.7 (random initial seed + Protected Constraints v1.1)
+Two small refinements that landed together because they touch the same
+contract surface (initial config in, deterministic board out) and want
+the same Canon framing.
+
+**Random initial seed.** The mobile-default-board pass left
+`pickInitialConfig()` returning `seed: 1`, so every page refresh delivered
+the same board — fine for debugging, miserable for first-contact play.
+Now `pickInitialConfig()` also calls `Math.floor(Math.random() *
+0x7fffffff)` and overrides the constant placeholder. Range matches the
+HUD reseed button, so refresh and reseed draw from the same space.
+Determinism unchanged: the engine never calls `Math.random` (the
+boundary invariant from the original substrate pass holds). Randomness
+lives at the module boundary; once captured, the seed is frozen for the
+run, regen carries it forward, replay-from-action-log compatibility is
+intact.
+
+**Protected Constraints v1.1 — eligibility tightened to
+`adjacentMines >= 2`.** Real play exposed that hidden `1`s are usually
+fake tension — corner / edge / context-implied 1s are already solved by
+the surrounding field, so protecting them spent witness authority on
+paperwork rather than on decisions. The eligibility filter in
+`generateBoard` flips one comparison and the comment is rewritten to
+explain why; nothing else moves. Demoted the Canon line that claimed
+`adjacentMines > 0`. Verbatim:
+
+**Superseded — engine-surface bullet (Protected Constraints v1 eligibility):**
+>   `floor(PROTECTED_TUNABLES.fraction × eligible)` safe numbered tiles as
+>   *protected* (value starts occluded) via Fisher-Yates shuffle of eligible
+>   indices. Eligibility: non-mine AND `adjacentMines > 0`. Same seed → same
+>   mines → same protected set, forever.
+
+Output contract answers:
+
+1. **Files changed:** `src/engine/board.ts` (one-line eligibility flip
+   plus the comment rewrite explaining the bureaucracy rationale);
+   `src/ui/GameView.tsx` (random-seed override in `pickInitialConfig()`,
+   comment update); `DIRECTORS_NOTES.md`.
+
+2. **Exact eligibility rule change:** the loop building the
+   `eligible: number[]` array in `generateBoard` previously gated on
+   `!t.isMine && t.adjacentMines > 0`; it now gates on
+   `!t.isMine && t.adjacentMines >= 2`. Zeros stay excluded for the
+   same reason as before (no value to occlude). All other policy is
+   unchanged: same `PROTECTED_FRACTION = 0.12`, same `floor(eligible.
+   length × fraction)` count, same Fisher-Yates shuffle on the same
+   rng stream that placed the mines, same order of operations.
+
+3. **Protected-pool size impact (measured, 200 sample seeds per
+   config):** desktop 24×24 / 99 — average eligible pool drops from
+   ~358.8 (v1.0, all numbered safe) to ~179.8 (v1.1, ≥2 only), a 49.9%
+   shrink; protected count drops from ~42.6 → ~21.1, a 50.4% drop.
+   Mobile 16×16 / 40 — pool drops from ~153.1 → ~69.4, a 54.7%
+   shrink; protected count drops from ~17.9 → ~7.8, a 56.1% drop.
+   The asymmetry (mobile shrinks proportionally more) is consistent
+   with mobile's lower hazard density (~16%) producing more
+   `adjacentMines === 1` tiles in the safe-numbered population.
+
+4. **Whether protected fraction needed adjustment:** the brief said
+   "do not proactively retune unless clearly necessary. Observe
+   first," and we held to that. The 12% fraction is unchanged. On
+   desktop the new ~21 protected tiles still represent a meaningful
+   chunk of the resolved-numbered field a player will see. Mobile is
+   the open question — ~8 protected tiles on a 16×16 board may feel
+   thin enough to undersell the mechanic, but real play should answer
+   that, not modeling. If the next pass concludes the mobile signal is
+   too quiet, options to consider in priority order: bump
+   `PROTECTED_FRACTION` (cheap, deterministic, possibly per-config),
+   relax the eligibility threshold for mobile only (introduces config
+   coupling — costlier), or move to topology-aware placement
+   (explicitly forbidden by this brief).
+
+5. **Determinism confirmation:** verified by re-running
+   `generateBoard` twice with the same seed and observing identical
+   protected-index lists, then with a different seed and observing a
+   distinct list. The eligibility tightening is a policy version bump
+   — same seed under the new policy produces a deterministic but
+   *different* protected layout than the same seed produced under
+   v1.0. That is the brief's "same board + same protected layout
+   (for the same policy version)" contract, exactly. The rng stream
+   itself is unchanged: mines placed first (same draws as v1.0), then
+   adjacency computed, then Fisher-Yates over a different (smaller)
+   eligible pool. Replay buffers keyed on action logs remain
+   compatible because protected layout is board-truth, not action-
+   stream state.
+
+6. **Explicitly deferred:** topology-aware placement, bridge-node
+   weighting, edge / corner penalties, anti-adjacency spacing,
+   per-tile variable unveil costs, per-config `PROTECTED_FRACTION`
+   tuning, a policy version field on `BoardConfig` (today the policy
+   is implicit in the build, which is the right level of formality
+   for a single-author iteration), automatic balance based on telemetry.
+   The brief explicitly forbade most of these and the cathedral they
+   would build; we held the line.

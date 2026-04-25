@@ -49,12 +49,20 @@ const MOBILE_INITIAL_CONFIG: BoardConfig = {
 // queries make naturally. typeof guards keep the call safe in non-DOM
 // environments (headless test harness, future SSR) where the desktop
 // default is the right fallback.
+//
+// Seed is freshly randomized each page load — refresh delivers a new
+// board rather than the same `seed: 1` field every time. The randomness
+// lives at the module boundary, not inside the engine: once captured
+// here, the value is frozen and engine reproducibility (same seed →
+// same board, regen carries it forward) is intact. Range matches the
+// HUD reseed button so all entry points draw from the same space.
 function pickInitialConfig(): BoardConfig {
   const isMobileViewport =
     typeof window !== 'undefined' &&
     typeof window.matchMedia === 'function' &&
     window.matchMedia('(max-width: 768px)').matches;
-  return isMobileViewport ? MOBILE_INITIAL_CONFIG : DESKTOP_INITIAL_CONFIG;
+  const base = isMobileViewport ? MOBILE_INITIAL_CONFIG : DESKTOP_INITIAL_CONFIG;
+  return { ...base, seed: Math.floor(Math.random() * 0x7fffffff) };
 }
 
 // Resolved once at module load. Capturing the choice here — not on every

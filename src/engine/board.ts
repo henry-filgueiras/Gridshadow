@@ -62,17 +62,22 @@ export function generateBoard(config: BoardConfig): Board {
   }
 
   // Deterministic protected-tile selection from the same rng stream that
-  // placed mines. Eligibility: non-mine AND adjacentMines > 0. Zeros are
-  // excluded on purpose — they have nothing to occlude, and leaving them
-  // alone keeps cascade semantics trivially clean (zero floods propagate
-  // as always). Fisher-Yates shuffle of the eligible-index list, then
-  // take the first K: exact-count selection, fully deterministic for a
-  // given seed, and stable under future additions (a new tunable or a
-  // new Tile field won't perturb which indices get selected).
+  // placed mines. Eligibility (Protected Constraints v1.1): non-mine AND
+  // adjacentMines >= 2. Zeros stay excluded — they have nothing to
+  // occlude, and leaving them alone keeps cascade semantics trivially
+  // clean. Ones are now also excluded: a hidden `1` is usually fake
+  // tension (corner / edge / already-implied by visible structure), so
+  // protecting them spends witness authority on bureaucracy rather than
+  // on decisions that actually alter inference. The threshold is
+  // intentionally simple — no topology heuristics, no edge/corner
+  // penalties, no spacing rules. Just remove the obviously low-value
+  // protected cases. Fisher-Yates shuffle of the eligible-index list,
+  // then take the first K: exact-count selection, fully deterministic
+  // for a given seed.
   const eligible: number[] = [];
   for (let i = 0; i < total; i++) {
     const t = tiles[i];
-    if (!t.isMine && t.adjacentMines > 0) eligible.push(i);
+    if (!t.isMine && t.adjacentMines >= 2) eligible.push(i);
   }
   const protectedCount = Math.floor(eligible.length * PROTECTED_FRACTION);
   for (let i = eligible.length - 1; i > 0; i--) {
