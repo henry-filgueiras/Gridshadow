@@ -615,3 +615,170 @@ body,
   margin-right: 4px;
   vertical-align: -1px;
 }
+
+/* Run Summary — post-run forensic panel. Breach uses the red palette
+   of the existing breach banner; cleared uses the cyan palette of the
+   cleared banner. No gold medals, no confetti — it's a record, not a
+   trophy. */
+.run-summary {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid #1f2a36;
+  border-radius: 3px;
+  background: rgba(12, 20, 28, 0.7);
+}
+
+.run-summary-breached {
+  border-color: #6a2a32;
+  background: rgba(30, 10, 14, 0.7);
+}
+
+.run-summary-cleared {
+  border-color: #2a7a78;
+  background: rgba(10, 26, 32, 0.7);
+  box-shadow: 0 0 0 1px rgba(126, 255, 255, 0.08);
+}
+
+.run-summary-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #1f2a36;
+}
+
+.run-summary-title {
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #7effff;
+}
+
+.run-summary-kind {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #8a9aab;
+}
+
+.run-summary-breached .run-summary-kind {
+  color: #ff4655;
+}
+
+.run-summary-cleared .run-summary-kind {
+  color: #7effff;
+}
+
+.run-summary-hero {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.run-summary-hero-pct {
+  font-size: 28px;
+  font-weight: bold;
+  color: #c7d1db;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+.run-summary-breached .run-summary-hero-pct {
+  color: #ffb0b0;
+}
+
+.run-summary-cleared .run-summary-hero-pct {
+  color: #7effff;
+}
+
+.run-summary-hero-label {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #5a6d80;
+}
+
+.run-summary-graph {
+  display: block;
+  width: 100%;
+  height: auto;
+  background: rgba(6, 11, 16, 0.6);
+  border: 1px solid #1f2a36;
+  border-radius: 2px;
+  margin-bottom: 8px;
+}
+
+.run-summary-graph-empty {
+  padding: 12px;
+  text-align: center;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: #3a4a5c;
+  text-transform: uppercase;
+  border: 1px dashed #1f2a36;
+  border-radius: 2px;
+  margin-bottom: 8px;
+}
+
+.run-summary-graph-axis {
+  stroke: #2d3a48;
+  stroke-width: 1;
+}
+
+.run-summary-graph-grid {
+  stroke: #1f2a36;
+  stroke-width: 1;
+  stroke-dasharray: 2 3;
+}
+
+.run-summary-graph-curve {
+  stroke: #7effff;
+  stroke-width: 1.5;
+  fill: none;
+  vector-effect: non-scaling-stroke;
+}
+
+.run-summary-graph-curve-breached {
+  stroke: #ff7e85;
+}
+
+.run-summary-graph-curve-cleared {
+  stroke: #7effff;
+}
+
+.run-summary-graph-ylabel,
+.run-summary-graph-xlabel {
+  fill: #5a6d80;
+  font-family: inherit;
+  font-size: 9px;
+  letter-spacing: 0.06em;
+}
+
+.run-summary-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 10px;
+}
+
+.run-summary-stat {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 2px 0;
+  border-bottom: 1px dotted #1f2a36;
+}
+
+.run-summary-stat-label {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #5a6d80;
+}
+
+.run-summary-stat-value {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: #c7d1db;
+}

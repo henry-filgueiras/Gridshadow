@@ -92,6 +92,34 @@ export interface ProbeReading {
   readonly hazardCount: number;
 }
 
+// Run Timeline Ledger v1 — the forensic record of what happened, step by
+// step. One entry is appended after every *effectful* state-changing
+// action; refused no-ops and pure UI actions (hover, hoverClear) do not
+// produce entries. `regen` is not recorded either; it resets the ledger
+// to empty so old-run noise cannot bleed into a fresh replay. `step` is
+// a monotonic action index (1-based), not a wall-clock timestamp — the
+// engine is forbidden from reading `Date.now` / `performance.now`, and
+// the same seed + same action log must reproduce the same ledger.
+//
+// `resolvedCount` is *non-mine* tiles in state `resolved` — the quantity
+// that actually progresses toward clear. `totalResolvable` is the
+// invariant non-mine tile count for this board. The hero graph's
+// Y-axis is `resolvedCount / totalResolvable`.
+export type RunAction = 'reveal' | 'flag' | 'confirm' | 'probe' | 'unveil';
+
+export type RunPhase = 'active' | 'breached' | 'cleared';
+
+export interface RunLedgerEntry {
+  readonly step: number;
+  readonly action: RunAction;
+  readonly resolvedCount: number;
+  readonly totalResolvable: number;
+  readonly flaggedCount: number;
+  readonly witnessCharge: number;
+  readonly contradictionCount: number;
+  readonly phase: RunPhase;
+}
+
 export interface GameState {
   readonly board: Board;
   readonly cursor: Coord | null;
@@ -102,4 +130,9 @@ export interface GameState {
   // the same ledger — the UI reads it, it does not author it. `probeHistory[0]`
   // is the most recent reading; empty array means no probe has landed yet.
   readonly probeHistory: ReadonlyArray<ProbeReading>;
+  // Run Timeline Ledger — append-only forensic log of every effectful
+  // action in the current run, oldest first (entry 0 is step 1). Engine-
+  // owned so replays keyed on the action log reproduce identical
+  // ledgers; reset to empty by `regen`.
+  readonly runHistory: ReadonlyArray<RunLedgerEntry>;
 }

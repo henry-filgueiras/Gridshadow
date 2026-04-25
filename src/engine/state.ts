@@ -4,9 +4,12 @@ import type {
   GamePhase,
   GameState,
   ProbeOrientation,
+  RunAction,
+  RunLedgerEntry,
   Tile,
 } from '../types';
 import { generateBoard, PROTECTED_TUNABLES, tileAt } from './board';
+import { detectContradictions } from './contradiction';
 
 // Witness Probe v1 tunables. Kept at file scope so future variants (shorter
 // probes, elite-cost probes) can reference them without touching the reducer.
@@ -54,10 +57,33 @@ export function createGameState(config: BoardConfig): GameState {
     phase: { kind: 'active' },
     witness: { charge: max, max, confirms: 0 },
     probeHistory: [],
+    runHistory: [],
   };
 }
 
 export function reduceGame(state: GameState, action: GameAction): GameState {
+  const next = reduceInner(state, action);
+  if (next === state) return state;
+  // Ledger append rule — only *effectful* board/witness actions produce
+  // entries. Hover and hoverClear are UI-state and change `cursor` only;
+  // regen replaces the whole run state (including a fresh empty ledger)
+  // and must not leave a trailing entry from the old run. Reference
+  // inequality (`next !== state`) above already filtered out refused
+  // no-ops; this switch filters out the two non-gameplay surfaces that
+  // still return a fresh object.
+  switch (action.type) {
+    case 'reveal':
+    case 'flag':
+    case 'confirm':
+    case 'probe':
+    case 'unveil':
+      return appendLedgerEntry(next, action.type);
+    default:
+      return next;
+  }
+}
+
+function reduceInner(state: GameState, action: GameAction): GameState {
   switch (action.type) {
     case 'hover': {
       if (state.cursor?.x === action.x && state.cursor?.y === action.y) {
@@ -82,6 +108,41 @@ export function reduceGame(state: GameState, action: GameAction): GameState {
     case 'regen':
       return createGameState({ ...state.board.config, seed: action.seed });
   }
+}
+
+// Run Timeline Ledger — forensic append. Called *after* the inner
+// reducer has produced the next state for an effectful action, so every
+// field in the entry describes the post-action world. Step is monotonic
+// action index (1-based, so a reader can count entries without +1
+// bookkeeping). `resolvedCount` counts non-mine tiles in state
+// `resolved` — the detonating mine at breach becomes `resolved` by the
+// reveal core but is excluded here because it's not progress. Mines
+// never count toward progress. `totalResolvable` is the board-intrinsic
+// non-mine count; passed through every entry (rather than derived later)
+// so the ledger is self-describing and replay diffs are trivial.
+function appendLedgerEntry(state: GameState, action: RunAction): GameState {
+  let resolvedCount = 0;
+  let flaggedCount = 0;
+  let totalResolvable = 0;
+  for (const t of state.board.tiles) {
+    if (!t.isMine) {
+      totalResolvable++;
+      if (t.state === 'resolved') resolvedCount++;
+    }
+    if (t.state === 'flagged') flaggedCount++;
+  }
+  const contradictionCount = detectContradictions(state).length;
+  const entry: RunLedgerEntry = {
+    step: state.runHistory.length + 1,
+    action,
+    resolvedCount,
+    totalResolvable,
+    flaggedCount,
+    witnessCharge: state.witness.charge,
+    contradictionCount,
+    phase: state.phase.kind,
+  };
+  return { ...state, runHistory: [...state.runHistory, entry] };
 }
 
 // --- Transitions ---------------------------------------------------------

@@ -5,6 +5,7 @@ import {
   witnessStatus,
 } from '../engine';
 import type { GameState, ProbeOrientation } from '../types';
+import { RunSummary } from './RunSummary';
 
 interface HUDProps {
   state: GameState;
@@ -52,7 +53,7 @@ export function HUD({
   const { config } = state.board;
   const tally = tallyTiles(state);
   const breach = state.phase.kind === 'breached' ? state.phase.at : null;
-  const cleared = state.phase.kind === 'cleared';
+  const terminal = state.phase.kind !== 'active';
   const wStatus = witnessStatus(state);
   const { charge, max, confirms } = state.witness;
   const { probeHistory } = state;
@@ -70,12 +71,12 @@ export function HUD({
         </div>
       )}
 
-      {cleared && (
-        <div className="hud-cleared" role="status">
-          <div className="hud-cleared-label">field stabilized</div>
-          <div className="hud-cleared-detail">witness protocol complete</div>
-        </div>
-      )}
+      {/* Run Summary — forensic replacement for the bare "cleared" banner
+          at terminal phase. Breach keeps the red "detonation at x,y"
+          banner above so the immediate cause stays visible; the summary
+          panel sits beneath it carrying the *story* of the run. Active
+          runs render no summary — live HUD owns the screen. */}
+      {terminal && <RunSummary state={state} />}
 
       <div className={`hud-witness hud-witness-${wStatus}`}>
         <div className="hud-witness-head">

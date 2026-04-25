@@ -12,9 +12,13 @@ export {
 } from './state';
 export {
   protectedTally,
+  resolvedCurvePoints,
+  runSummary,
   tallyTiles,
   witnessStatus,
   type ProtectedTally,
+  type ResolvedCurvePoint,
+  type RunSummary,
   type TileTally,
   type WitnessStatus,
 } from './selectors';
